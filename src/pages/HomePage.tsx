@@ -6,10 +6,7 @@ import ContentCard from '../components/ContentCard'
 import TagList from '../components/TagList'
 import {
   euanProfile,
-  recentThoughts,
-  recentDiary,
-  recentNotes,
-  recentBlog,
+  contentOfType,
   trajectoryEntries,
   footprintCities,
   flightRecords,
@@ -49,10 +46,12 @@ export default function HomePage() {
   const currentUser = useCurrentUser()
   const heroKey = searchParams.get('hero') ?? '2'
   const heroSrc = heroOptions[heroKey] ?? heroOptions['2']
-  const publicDiary = recentDiary.filter(d => d.visibility === 'public')
-  const publicPkm = [...recentNotes, ...recentBlog]
-    .filter(item => item.visibility === 'public')
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  // Derived from the live store so new content appears and deleted content
+  // stops appearing, without this page tracking either.
+  const publicDiary = contentOfType('diary', { author: 'euan', publicOnly: true })
+  const publicPkm = contentOfType('pkm', { author: 'euan', publicOnly: true })
+  const publicThoughts = contentOfType('thought', { author: 'euan', publicOnly: true })
+  const publicTotal = publicDiary.length + publicPkm.length + publicThoughts.length
   const totalDistance = flightRecords.reduce((s, f) => s + f.distance, 0).toLocaleString()
 
   return (
@@ -109,7 +108,7 @@ export default function HomePage() {
                     <p className="text-sm text-[color:var(--muted-foreground)]">@{euanProfile.username}</p>
                   </div>
                   <div className="mt-4 grid grid-cols-3 gap-6">
-                    <QuietStat value={recentBlog.length + recentNotes.length + recentDiary.length} label="内容" />
+                    <QuietStat value={publicTotal} label="内容" />
                     <QuietStat value={footprintCities.length} label="城市" />
                     <QuietStat value={flightRecords.length} label="航段" />
                   </div>
@@ -141,12 +140,15 @@ export default function HomePage() {
               <section>
                 <SectionHeader title="最近随想" to="/euan/thoughts" />
                 <div className="space-y-5">
-                  {recentThoughts.map(q => (
+                  {publicThoughts.length === 0 && (
+                    <p className="text-sm text-[color:var(--muted-foreground)]">作者没有公开任何随想哦～</p>
+                  )}
+                  {publicThoughts.slice(0, 3).map(q => (
                     <blockquote
                       key={q.id}
                       className="border-l-2 border-[color:var(--accent)] py-1 pl-4"
                     >
-                      <p className="text-sm leading-7 text-[color:var(--foreground)]">{q.text}</p>
+                      <p className="text-sm leading-7 text-[color:var(--foreground)]">{q.title}</p>
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[color:var(--muted-foreground)]">
                         <span className="rounded-full bg-[color:var(--secondary)] px-2 py-0.5">
                           {q.thoughtType === 'excerpt' ? '摘录' : '原创'}

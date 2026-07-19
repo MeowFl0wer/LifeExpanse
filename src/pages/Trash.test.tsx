@@ -6,6 +6,8 @@ import TrashPage from './TrashPage'
 import ContentListPage from './ContentListPage'
 import ContentDetailPage from './ContentDetailPage'
 import SearchPage from './SearchPage'
+import HomePage from './HomePage'
+import AppDashboard from './AppDashboard'
 import { setCurrentUser, clearCurrentUser } from '../auth'
 import {
   allContent, trashedItems, addContentItem, addFolder, folders,
@@ -114,6 +116,28 @@ describe('soft delete removes the item from every surface', () => {
     expect(screen.getByText('404')).toBeTruthy()
   })
 
+  // The homepage and dashboard used to read the seed arrays, so a deleted item
+  // lingered there and only 404'd once clicked.
+  it('disappears from the public homepage', () => {
+    const item = seed({ type: 'diary', contentKind: undefined, title: '首页不该再出现的日记' })
+    created.push(item.id)
+
+    deleteContentItem(item.id)
+    render(<MemoryRouter initialEntries={['/']}><HomePage /></MemoryRouter>)
+
+    expect(screen.queryByText('首页不该再出现的日记')).toBeNull()
+  })
+
+  it('disappears from the workspace recent list', () => {
+    const item = seed({ title: '工作台不该再出现的笔记' })
+    created.push(item.id)
+
+    deleteContentItem(item.id)
+    render(<MemoryRouter initialEntries={['/app']}><AppDashboard /></MemoryRouter>)
+
+    expect(screen.queryByText('工作台不该再出现的笔记')).toBeNull()
+  })
+
   it('is no longer counted inside its folder', () => {
     const folderId = `fd-test-${Math.random().toString(36).slice(2)}`
     addFolder({ id: folderId, owner: 'euan', name: '临时文件夹', createdAt: '' })
@@ -125,6 +149,42 @@ describe('soft delete removes the item from every surface', () => {
     expect(allContent.filter(c => (c.folderIds ?? []).includes(folderId))).toHaveLength(0)
     const idx = folders.findIndex(f => f.id === folderId)
     if (idx >= 0) folders.splice(idx, 1)
+  })
+})
+
+// Same root cause as the deletion leak: the seed arrays never received new
+// items either, so created content never reached these pages.
+describe('newly created content reaches the shared pages', () => {
+  const created: string[] = []
+
+  beforeEach(() => {
+    clearCurrentUser()
+    setCurrentUser('euan')
+  })
+
+  afterEach(() => {
+    resetStore(created.splice(0))
+  })
+
+  it('appears on the public homepage', () => {
+    const item = seed({ type: 'diary', contentKind: undefined, title: '刚写的公开日记', visibility: 'public' })
+    created.push(item.id)
+
+    render(<MemoryRouter initialEntries={['/']}><HomePage /></MemoryRouter>)
+
+    expect(screen.getByText('刚写的公开日记')).toBeTruthy()
+  })
+
+  it('appears in the workspace recent list', () => {
+    const item = seed({
+      title: '刚写的笔记',
+      createdAt: new Date().toISOString(),
+    })
+    created.push(item.id)
+
+    render(<MemoryRouter initialEntries={['/app']}><AppDashboard /></MemoryRouter>)
+
+    expect(screen.getByText('刚写的笔记')).toBeTruthy()
   })
 })
 

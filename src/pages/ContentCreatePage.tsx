@@ -94,14 +94,13 @@ export default function ContentCreatePage() {
   const [importError, setImportError] = useState('')
   const supportsImport = createType === 'note' || createType === 'article'
 
-  // /new/note?import=1 opens the picker straight away.
-  useEffect(() => {
-    if (supportsImport && searchParams.get('import') === '1') {
-      mdInputRef.current?.click()
-    }
-    // Only on mount: re-opening on every render would trap the user in a dialog.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  /*
+   * /new/note?import=1 arrives here from the 导入 Markdown button, possibly via
+   * the login page. Opening the file dialog programmatically would be outside a
+   * user gesture by then and browsers may block it, so the import panel is
+   * highlighted instead and the user clicks once more.
+   */
+  const importRequested = supportsImport && searchParams.get('import') === '1'
 
   function handleMarkdownFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -285,12 +284,17 @@ export default function ContentCreatePage() {
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
         <div className="space-y-5">
           {supportsImport && (
-            <div className="life-surface flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <div
+              className={`life-surface flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${
+                importRequested && !importNotice ? 'border-[color:var(--primary)] bg-[#EEF8F0]' : ''
+              }`}
+            >
               <div>
                 <p className="text-sm font-medium text-[color:var(--foreground)]">从 Markdown 文件导入</p>
                 <p className="mt-0.5 text-xs leading-6 text-[color:var(--muted-foreground)]">
-                  支持 .md / .markdown。可识别 front-matter 的 title、tags、summary，
-                  否则用首个一级标题或文件名作标题。
+                  {importRequested && !importNotice
+                    ? '点击右侧「选择文件」挑选要导入的 .md 文件。'
+                    : '支持 .md / .markdown。可识别 front-matter 的 title、tags、summary，否则用首个一级标题或文件名作标题。'}
                 </p>
               </div>
               <input
@@ -300,7 +304,13 @@ export default function ContentCreatePage() {
                 className="hidden"
                 onChange={handleMarkdownFile}
               />
-              <button type="button" onClick={() => mdInputRef.current?.click()} className="life-button shrink-0 text-sm">
+              <button
+                type="button"
+                onClick={() => mdInputRef.current?.click()}
+                className={`shrink-0 text-sm ${
+                  importRequested && !importNotice ? 'life-button life-button-primary' : 'life-button'
+                }`}
+              >
                 选择文件
               </button>
             </div>

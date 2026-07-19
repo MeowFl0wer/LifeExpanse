@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Logo from './Logo'
 import { useIsAdmin, useCurrentUser, clearCurrentUser } from '../auth'
+import { euanProfile } from '../mockData'
 
 const createOptions = [
   { label: '记随想', to: '/new/thought' },
@@ -98,7 +99,7 @@ export default function AppHeader() {
               aria-label="账号设置"
             >
               <img
-                src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=32&h=32&fit=crop&auto=format"
+                src={euanProfile.avatar}
                 alt={currentUser ?? ''}
                 className="w-7 h-7 rounded-full object-cover"
               />

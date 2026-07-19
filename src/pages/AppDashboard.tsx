@@ -1,23 +1,10 @@
 import { Link } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import ContentCard from '../components/ContentCard'
-import { thoughtContent, recentDiary, recentNotes, recentBlog, flightRecords, footprintCities, generateHeatmapData, trashedItems } from '../mockData'
+import { countOfType, recentContent, getTrash, flightRecords, footprintCities, generateHeatmapData } from '../mockData'
+import { useCurrentUser } from '../auth'
 
 const heatmapData = generateHeatmapData()
-
-const modules = [
-  { label: '随想', to: '/euan/thoughts', count: thoughtContent.length, note: '短句和摘录' },
-  { label: '日记', to: '/euan/diary', count: 83, note: '按日期记录' },
-  { label: '笔记与文章', to: '/euan/pkm', count: recentNotes.length + recentBlog.length, note: '笔记和公开文章' },
-  { label: '人生轨迹', to: '/euan/trajectory', count: 310, note: '时间和地点' },
-  { label: '城市足迹', to: '/euan/map', count: 23, note: '到访城市' },
-  { label: '飞行记录', to: '/euan/flights', count: flightRecords.length, note: '航班和里程' },
-  { label: '加密空间', to: '/euan/space', count: 2, note: '私密内容' },
-]
-
-const recentContent = [...thoughtContent, ...recentDiary, ...recentNotes, ...recentBlog]
-  .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-  .slice(0, 5)
 
 function HeatmapGrid() {
   type HeatmapDay = (typeof heatmapData)[number]
@@ -54,6 +41,22 @@ function SectionTitle({ title, desc }: { title: string; desc?: string }) {
 }
 
 export default function AppDashboard() {
+  const currentUser = useCurrentUser() ?? 'euan'
+
+  // Derived per render from the live store, so creations show up and deleted
+  // items drop out without this page needing to know about either.
+  const modules = [
+    { label: '随想', to: '/euan/thoughts', count: countOfType('thought', currentUser), note: '短句和摘录' },
+    { label: '日记', to: '/euan/diary', count: countOfType('diary', currentUser), note: '按日期记录' },
+    { label: '笔记与文章', to: '/euan/pkm', count: countOfType('pkm', currentUser), note: '笔记和公开文章' },
+    { label: '人生轨迹', to: '/euan/trajectory', count: 310, note: '时间和地点' },
+    { label: '城市足迹', to: '/euan/map', count: footprintCities.length, note: '到访城市' },
+    { label: '飞行记录', to: '/euan/flights', count: flightRecords.length, note: '航班和里程' },
+    { label: '加密空间', to: '/euan/space', count: 2, note: '私密内容' },
+  ]
+  const recent = recentContent(5, { author: currentUser })
+  const trashCount = getTrash(currentUser).length
+
   const todayHasDiary = false
   const monthDays = 14
   const draftCount = 3
@@ -105,7 +108,7 @@ export default function AppDashboard() {
             <section>
               <SectionTitle title="最近更新" />
               <div className="border-t border-[color:var(--border)]">
-                {recentContent.map(item => (
+                {recent.map(item => (
                   <ContentCard key={item.id} item={item} showVisibility compact />
                 ))}
               </div>
@@ -178,7 +181,7 @@ export default function AppDashboard() {
               <div className="flex justify-between gap-4 text-sm">
                 <span className="text-[color:var(--muted-foreground)]">待清理</span>
                 <Link to="/trash" className="font-medium text-[color:var(--primary)] hover:underline">
-                  {trashedItems.length} 条
+                  {trashCount} 条
                 </Link>
               </div>
             </section>

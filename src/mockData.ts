@@ -11,7 +11,7 @@ export const euanProfile: UserProfile = {
   username: 'euan',
   displayName: 'Euan',
   bio: '',
-  avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&h=120&fit=crop&auto=format',
+  avatar: '/brand/euan-avatar.jpg',
   publicSince: '2023-03-15',
 }
 
@@ -21,7 +21,7 @@ export const siteStats: SiteStats = {
   totalUV: 3217,
 }
 
-export const recentThoughts: Thought[] = [
+const recentThoughts: Thought[] = [
   {
     id: 'q1',
     text: '旅行的意义不是到达某处，而是在途中保持清醒。',
@@ -55,7 +55,7 @@ export const recentThoughts: Thought[] = [
   },
 ]
 
-export const recentDiary: ContentItem[] = [
+const recentDiary: ContentItem[] = [
   {
     id: 'd1',
     slug: 'demo-diary',
@@ -100,7 +100,7 @@ export const recentDiary: ContentItem[] = [
   },
 ]
 
-export const recentNotes: ContentItem[] = [
+const recentNotes: ContentItem[] = [
   {
     id: 'n1',
     slug: 'demo-note',
@@ -230,7 +230,7 @@ Host internal
   },
 ]
 
-export const recentBlog: ContentItem[] = [
+const recentBlog: ContentItem[] = [
   {
     id: 'b1',
     slug: 'building-personal-platform',
@@ -585,7 +585,7 @@ export const flightRecords: FlightRecord[] = [
   { id: 'fl5', date: '2024-09-23', airline: 'KE', flightNo: 'KE858', from: 'ICN', to: 'PEK', distance: 951, durationMinutes: 130, status: 'delayed' },
 ]
 
-export const thoughtContent: ContentItem[] = recentThoughts.map((thought, index) => ({
+const thoughtContent: ContentItem[] = recentThoughts.map((thought, index) => ({
   id: thought.id,
   slug: `thought-${index + 1}`,
   type: 'thought',
@@ -609,7 +609,42 @@ export const thoughtContent: ContentItem[] = recentThoughts.map((thought, index)
   personalNote: thought.personalNote,
 }))
 
+/**
+ * The single live content store. Seed arrays above are private on purpose:
+ * `allContent` is a copy made at module load, so anything reading a seed array
+ * directly would miss every later create and keep showing deleted items.
+ * Read through this array or the helpers below.
+ */
 export const allContent: ContentItem[] = [...thoughtContent, ...recentDiary, ...recentNotes, ...recentBlog]
+
+/** Live content of one type, newest first, optionally narrowed to an author. */
+export function contentOfType(
+  type: ContentItem['type'],
+  options: { author?: string; publicOnly?: boolean } = {}
+): ContentItem[] {
+  return allContent
+    .filter(c => c.type === type)
+    .filter(c => !options.author || c.author === options.author)
+    .filter(c => !options.publicOnly || c.visibility === 'public')
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+}
+
+/** Most recently created live content, newest first. */
+export function recentContent(
+  limit: number,
+  options: { author?: string; publicOnly?: boolean } = {}
+): ContentItem[] {
+  return allContent
+    .filter(c => !options.author || c.author === options.author)
+    .filter(c => !options.publicOnly || c.visibility === 'public')
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, limit)
+}
+
+/** Live count for a type, for dashboard tiles. */
+export function countOfType(type: ContentItem['type'], author: string): number {
+  return allContent.filter(c => c.type === type && c.author === author).length
+}
 
 export function getContentBySlug(slug: string): ContentItem | undefined {
   return allContent.find(c => c.slug === slug)
