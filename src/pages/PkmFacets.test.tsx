@@ -5,9 +5,9 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import ContentListPage from './ContentListPage'
 import { setCurrentUser, clearCurrentUser } from '../auth'
 
-function renderPkm() {
+function renderPkm(entry = '/euan/pkm') {
   return render(
-    <MemoryRouter initialEntries={['/euan/pkm']}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/:username/:sectionPath" element={<ContentListPage section="pkm" />} />
       </Routes>
@@ -243,6 +243,34 @@ describe('library metadata is not leaked to guests', () => {
     await user.click(screen.getByRole('button', { name: 'Folders' }))
 
     expect(screen.getByText('前端 / React')).toBeTruthy()
+  })
+
+  // The index hid Inbox, but the drill-in used to resolve straight from the
+  // store, so a hand-typed id still rendered its name and description.
+  it('does not open a private folder from a hand-typed query string', () => {
+    renderPkm('/euan/pkm?folder=fd3')
+
+    expect(screen.queryByText('Inbox')).toBeNull()
+    expect(screen.queryByText('还没归类的东西。')).toBeNull()
+  })
+
+  it('opens a series that holds public content', () => {
+    renderPkm('/euan/pkm?series=sr1')
+    expect(screen.getByText('LifeExpanse 构建札记')).toBeTruthy()
+    expect(screen.getByText('为什么我要自己做一个记录平台')).toBeTruthy()
+  })
+
+  it('a drill-in URL restores the library view rather than the All tab', () => {
+    setCurrentUser('euan')
+    renderPkm('/euan/pkm?folder=fd3')
+    // Opens the folder itself, not the flat list.
+    expect(screen.getByRole('button', { name: '← 返回文件夹' })).toBeTruthy()
+    expect(screen.getByText('待整理的想法（草稿）')).toBeTruthy()
+  })
+
+  it('still opens a folder that holds public content', () => {
+    renderPkm('/euan/pkm?folder=fd1')
+    expect(screen.getAllByText('前端 / React').length).toBeGreaterThan(0)
   })
 
   it('shows the private folder to its owner', async () => {

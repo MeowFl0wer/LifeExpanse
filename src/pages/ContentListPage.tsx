@@ -10,7 +10,7 @@ import { visibilityConfig } from '../components/VisibilityBadge'
 import {
   allContent, addContentItem, makeUniqueSlug,
   folders as allFolders, series as allSeries,
-  addFolder, addSeries, updateFolder, getFolder, getSeries,
+  addFolder, addSeries, updateFolder,
 } from '../mockData'
 import { itemsInFolder, foldersInSeries, looseItemsInSeries, allItemsInSeries } from '../lib/library'
 import { loginUrlFor } from '../lib/redirect'
@@ -85,10 +85,6 @@ export default function ContentListPage({ section }: ContentListPageProps) {
   // Library and content live in a module-level mock store; this re-reads it.
   const [, bumpStore] = useState(0)
 
-  // Drill-in lives in the URL so back/forward work.
-  const openFolder = getFolder(searchParams.get('folder') ?? '')
-  const openSeries = getSeries(searchParams.get('series') ?? '')
-
   function setDrill(next: { folder?: string; series?: string }) {
     const params = new URLSearchParams()
     if (next.folder) params.set('folder', next.folder)
@@ -117,6 +113,21 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     ? authorSeries
     : authorSeries.filter(s => allItemsInSeries(baseItems, authorFolders, s.id).length > 0)
 
+  // Drill-in lives in the URL so back/forward work. Resolving against the
+  // filtered lists — not the raw store — means a hand-typed ?folder=<id> for a
+  // private folder finds nothing, rather than rendering its name and
+  // description in the detail header.
+  const openFolder = ownFolders.find(f => f.id === searchParams.get('folder'))
+  const openSeries = ownSeries.find(s => s.id === searchParams.get('series'))
+
+  // A drill-in URL must restore its view too, otherwise ?folder=… loads on the
+  // All tab and never opens.
+  const activeView: PkmView = searchParams.get('folder')
+    ? 'folders'
+    : searchParams.get('series')
+      ? 'series'
+      : pkmView
+
   function applyCommonFilters(list: ContentItem[]): ContentItem[] {
     let out = list
     if (filterVisibility !== 'all') out = out.filter(c => c.visibility === filterVisibility)
@@ -135,9 +146,9 @@ export default function ContentListPage({ section }: ContentListPageProps) {
 
   let items = baseItems
   if (sec === 'pkm') {
-    if (pkmView === 'notes') items = items.filter(c => c.contentKind === 'note')
-    if (pkmView === 'articles') items = items.filter(c => c.contentKind === 'article')
-    if (pkmView === 'drafts') items = items.filter(c => c.visibility === 'draft')
+    if (activeView === 'notes') items = items.filter(c => c.contentKind === 'note')
+    if (activeView === 'articles') items = items.filter(c => c.contentKind === 'article')
+    if (activeView === 'drafts') items = items.filter(c => c.visibility === 'draft')
   }
   if (sec === 'thoughts' && thoughtFilter !== 'all') {
     items = items.filter(c => c.thoughtType === thoughtFilter)
@@ -147,10 +158,10 @@ export default function ContentListPage({ section }: ContentListPageProps) {
   const facets = tagFacets(baseItems)
   const hasFilters =
     filterVisibility !== 'all' || selectedTags.length > 0 || filterKeyword !== '' ||
-    (sec === 'pkm' && pkmView !== 'all' && pkmView !== 'folders' && pkmView !== 'series') ||
+    (sec === 'pkm' && activeView !== 'all' && activeView !== 'folders' && activeView !== 'series') ||
     (sec === 'thoughts' && thoughtFilter !== 'all')
 
-  const browsingLibrary = sec === 'pkm' && (pkmView === 'folders' || pkmView === 'series')
+  const browsingLibrary = sec === 'pkm' && (activeView === 'folders' || activeView === 'series')
 
   /** New content: a guest is sent through login and returned here afterwards. */
   function handleNew() {
@@ -313,7 +324,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
                 type="button"
                 onClick={() => { setPkmView(view.key); setDrill({}) }}
                 className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
-                  pkmView === view.key
+                  activeView === view.key
                     ? 'border-[color:var(--primary)] bg-[#EEF8F0] text-[color:var(--primary)]'
                     : 'border-[color:var(--border)] bg-white/70 text-[color:var(--muted-foreground)] hover:border-[color:var(--accent)]'
                 }`}
@@ -392,7 +403,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
 
         {browsingLibrary ? (
           <LibraryBrowser
-            view={pkmView === 'folders' ? 'folders' : 'series'}
+            view={activeView === 'folders' ? 'folders' : 'series'}
             isOwner={isOwner}
             folders={ownFolders}
             seriesList={ownSeries}

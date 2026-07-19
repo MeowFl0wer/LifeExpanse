@@ -1,10 +1,13 @@
 import { afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
+import { clearCurrentUser } from '../auth'
 
 afterEach(() => {
   cleanup()
-  // The session store is module state backed by localStorage; clearing between
-  // tests keeps a login in one test from leaking into the next.
+  // Go through the auth module rather than clearing storage directly: the
+  // session is cached in module state, so wiping storage alone would leave a
+  // stale user visible to the next test.
+  clearCurrentUser()
   window.localStorage.clear()
   window.sessionStorage.clear()
 })

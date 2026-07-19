@@ -71,8 +71,10 @@
 - 加密空间的新建与设置、在空间内发布内容
 - 笔记发布为文章 / 退回笔记（只切换当前页面显示）
 
-登录状态存在 `localStorage`，加密空间访客会话存在 `sessionStorage`，
-都只是原型替身——真实实现应使用 `HttpOnly + Secure + SameSite` Cookie 并由后端校验。
+登录状态：勾选「保持登录」时存在 `localStorage`（跨浏览器重启保留），
+未勾选时存在 `sessionStorage`（关闭标签页即失效）；加密空间访客会话始终存在
+`sessionStorage`。这些都只是原型替身——真实实现应使用
+`HttpOnly + Secure + SameSite` Cookie 并由后端校验。
 
 ### 演示账号
 
@@ -142,7 +144,7 @@ pnpm test:watch # 监听模式
 ```
 src/
 ├── App.tsx           # 路由表
-├── auth.ts           # 前端会话（localStorage，原型用）
+├── auth.ts           # 前端会话（session/localStorage，原型用）
 ├── lib/              # 纯逻辑与单元测试（csv / slug / footprint）
 ├── mockData.ts       # 全部演示数据
 ├── types.ts          # 共用类型
