@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import ContentCard from '../components/ContentCard'
-import { thoughtContent, recentDiary, recentNotes, recentBlog, flightRecords, footprintCities, generateHeatmapData } from '../mockData'
+import { thoughtContent, recentDiary, recentNotes, recentBlog, flightRecords, footprintCities, generateHeatmapData, trashedItems } from '../mockData'
 
 const heatmapData = generateHeatmapData()
 
@@ -170,6 +170,16 @@ export default function AppDashboard() {
                   <span className="text-[color:var(--muted-foreground)]">总里程</span>
                   <span className="font-medium text-[color:var(--foreground)]">{totalDistance} km</span>
                 </div>
+              </div>
+            </section>
+
+            <section>
+              <SectionTitle title="回收站" />
+              <div className="flex justify-between gap-4 text-sm">
+                <span className="text-[color:var(--muted-foreground)]">待清理</span>
+                <Link to="/trash" className="font-medium text-[color:var(--primary)] hover:underline">
+                  {trashedItems.length} 条
+                </Link>
               </div>
             </section>
 

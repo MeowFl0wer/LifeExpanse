@@ -153,6 +153,13 @@ export default function AppHeader() {
             >
               账号与备份
             </Link>
+            <Link
+              to="/trash"
+              className="block px-2 py-2.5 text-sm text-[color:var(--muted-foreground)] no-underline hover:text-[color:var(--foreground)]"
+              onClick={() => setMenuOpen(false)}
+            >
+              回收站
+            </Link>
             {admin && (
               <Link
                 to="/admin"

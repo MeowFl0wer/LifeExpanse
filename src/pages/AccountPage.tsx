@@ -261,6 +261,14 @@ export default function AccountPage() {
             </section>
 
             <section className="border-t border-[color:var(--border)] pt-8">
+              <SectionTitle
+                title="回收站"
+                desc="删除的内容会先进入回收站，保留 30 天，期间可以随时恢复。"
+              />
+              <Link to="/trash" className="life-button text-sm">打开回收站</Link>
+            </section>
+
+            <section className="border-t border-[color:var(--border)] pt-8">
               <SectionTitle title="删除账号" desc="删除前请先导出数据。此操作需要二次确认。" />
               <button
                 type="button"

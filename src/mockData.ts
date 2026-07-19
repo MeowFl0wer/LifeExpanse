@@ -4,6 +4,7 @@ import type {
   AdminUserRow, InvitationCode, SecurityLogEntry, RegistrationMode, Folder, Series,
 } from './types'
 import { matchFootprint } from './lib/footprint'
+import { isExpired } from './lib/trash'
 import { uniqueSlug } from './lib/slug'
 
 export const euanProfile: UserProfile = {
@@ -330,9 +331,73 @@ export function updateSeries(id: string, patch: Partial<Series>): void {
   if (target) Object.assign(target, patch)
 }
 
+/* ---- Recycle bin (PRD 25.2) ----
+ *
+ * Deleted items move out of `allContent` into a separate store rather than
+ * being flagged in place. Every list, search and detail lookup reads
+ * `allContent`, so nothing can accidentally keep showing a deleted item
+ * because one query forgot to filter on a flag.
+ */
+
+export interface TrashEntry {
+  item: ContentItem
+  deletedAt: string
+}
+
+export const trashedItems: TrashEntry[] = []
+
+/** Soft delete: recoverable until the retention window closes. */
 export function deleteContentItem(id: string): void {
   const index = allContent.findIndex(c => c.id === id)
-  if (index >= 0) allContent.splice(index, 1)
+  if (index < 0) return
+  const [item] = allContent.splice(index, 1)
+  trashedItems.push({ item: item!, deletedAt: new Date().toISOString() })
+}
+
+/**
+ * Puts an item back. If its slug was taken while it sat in the bin, it is
+ * given a fresh one so the restore cannot collide with live content.
+ */
+export function restoreContentItem(id: string): ContentItem | undefined {
+  const index = trashedItems.findIndex(t => t.item.id === id)
+  if (index < 0) return undefined
+  const [entry] = trashedItems.splice(index, 1)
+  const item = entry!.item
+  if (allContent.some(c => c.slug === item.slug)) {
+    item.slug = makeUniqueSlug(item.slug)
+  }
+  allContent.push(item)
+  return item
+}
+
+/** Permanent removal — no way back. */
+export function purgeContentItem(id: string): void {
+  const index = trashedItems.findIndex(t => t.item.id === id)
+  if (index >= 0) trashedItems.splice(index, 1)
+}
+
+export function emptyTrash(owner: string): void {
+  for (let i = trashedItems.length - 1; i >= 0; i--) {
+    if (trashedItems[i]!.item.author === owner) trashedItems.splice(i, 1)
+  }
+}
+
+/** Drops entries whose retention window has closed. */
+export function purgeExpiredTrash(now: number = Date.now()): number {
+  let removed = 0
+  for (let i = trashedItems.length - 1; i >= 0; i--) {
+    if (isExpired(trashedItems[i]!.deletedAt, now)) {
+      trashedItems.splice(i, 1)
+      removed++
+    }
+  }
+  return removed
+}
+
+export function getTrash(owner: string): TrashEntry[] {
+  return trashedItems
+    .filter(t => t.item.author === owner)
+    .sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime())
 }
 
 export function updateContentItem(id: string, patch: Partial<ContentItem>): void {

@@ -95,7 +95,10 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
   function handleDelete() {
     // Second step: an explicit OS-level confirm on top of the inline one, since
     // this removes content rather than just changing it.
-    const sure = window.confirm(`确定要删除「${item!.title}」吗？\n\n删除后会从列表、搜索和所属文件夹中移除。`)
+    const sure = window.confirm(
+      `确定要删除「${item!.title}」吗？\n\n` +
+      '内容会移入回收站，保留 30 天，期间可以随时恢复。'
+    )
     if (!sure) {
       setConfirmingDelete(false)
       return

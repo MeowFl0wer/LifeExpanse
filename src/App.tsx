@@ -18,6 +18,7 @@ import SearchPage from './pages/SearchPage'
 import AccountPage from './pages/AccountPage'
 import AdminPage from './pages/AdminPage'
 import AboutPage from './pages/AboutPage'
+import TrashPage from './pages/TrashPage'
 import { useIsLoggedIn, useIsAdmin } from './auth'
 import { loginUrlFor } from './lib/redirect'
 
@@ -63,6 +64,7 @@ export default function App() {
         <Route path="/search" element={<SearchPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
+        <Route path="/trash" element={<RequireAuth><TrashPage /></RequireAuth>} />
         <Route path="/admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
 
         {/* Content list pages */}
