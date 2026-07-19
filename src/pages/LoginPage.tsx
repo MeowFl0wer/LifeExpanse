@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Logo from '../components/Logo'
 import { setCurrentUser } from '../auth'
@@ -18,6 +18,26 @@ export default function LoginPage() {
   // Where to land after signing in, e.g. /login?next=/new/note
   const next = safeNextPath(searchParams.get('next'))
 
+  /*
+   * Both the simulated request and the short success pause outlive the submit
+   * handler. If the user leaves in the meantime — logo, back button, anything —
+   * a pending timer would drag them to `next` from a page they had already
+   * left, so everything after an await is gated on still being mounted.
+   */
+  const mounted = useRef(true)
+  const redirectTimer = useRef<number | null>(null)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      if (redirectTimer.current !== null) {
+        window.clearTimeout(redirectTimer.current)
+        redirectTimer.current = null
+      }
+    }
+  }, [])
+
   function validate(): string | null {
     if (!credential.trim()) return '请输入用户名或邮箱'
     if (!password) return '请输入密码'
@@ -35,6 +55,7 @@ export default function LoginPage() {
 
     // Simulate network delay
     await new Promise(r => setTimeout(r, 1200))
+    if (!mounted.current) return
 
     // Mock: only accept euan / demo123456
     if (
@@ -43,7 +64,11 @@ export default function LoginPage() {
     ) {
       setCurrentUser('euan', { remember })
       setState('success')
-      setTimeout(() => navigate(next), 600)
+      // Brief pause so the success state is visible before leaving.
+      redirectTimer.current = window.setTimeout(() => {
+        redirectTimer.current = null
+        if (mounted.current) navigate(next)
+      }, 600)
     } else {
       setState('error')
       setErrorMsg('用户名或密码不正确，请重试。（提示：用户名 euan，密码 demo123456）')
