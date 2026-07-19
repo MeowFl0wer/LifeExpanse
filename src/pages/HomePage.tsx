@@ -1,4 +1,5 @@
 import { Link, useSearchParams } from 'react-router-dom'
+import { useCurrentUser } from '../auth'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import ContentCard from '../components/ContentCard'
@@ -45,6 +46,7 @@ const heroOptions: Record<string, string> = {
 
 export default function HomePage() {
   const [searchParams] = useSearchParams()
+  const currentUser = useCurrentUser()
   const heroKey = searchParams.get('hero') ?? '2'
   const heroSrc = heroOptions[heroKey] ?? heroOptions['2']
   const publicDiary = recentDiary.filter(d => d.visibility === 'public')
@@ -88,7 +90,7 @@ export default function HomePage() {
                 <Link to="/euan/pkm" className="life-button life-button-primary text-sm">
                   看笔记与文章
                 </Link>
-                <Link to="/login" className="life-button text-sm">
+                <Link to={currentUser ? '/app' : '/login'} className="life-button text-sm">
                   进入工作台
                 </Link>
               </div>
@@ -162,57 +164,91 @@ export default function HomePage() {
                 </div>
               </section>
 
-              <section>
-                <SectionHeader title="人生轨迹" to="/euan/trajectory" />
-                <div className="space-y-3">
-                  {trajectoryEntries.slice(0, 4).map(entry => (
-                    <div key={entry.id} className="grid grid-cols-[5.4rem_1fr] gap-3 border-b border-[color:var(--border)] pb-3 last:border-0">
-                      <time className="text-xs text-[color:var(--muted-foreground)]">{entry.date}</time>
-                      <div className="min-w-0">
-                        <span className="text-sm font-medium text-[color:var(--foreground)]">
-                          {entry.city}, {entry.country}
+              {currentUser ? (
+                <>
+                  <section>
+                    <SectionHeader title="人生轨迹" to="/euan/trajectory" />
+                    <div className="space-y-3">
+                      {trajectoryEntries.slice(0, 4).map(entry => (
+                        <div key={entry.id} className="grid grid-cols-[5.4rem_1fr] gap-3 border-b border-[color:var(--border)] pb-3 last:border-0">
+                          <time className="text-xs text-[color:var(--muted-foreground)]">{entry.date}</time>
+                          <div className="min-w-0">
+                            <span className="text-sm font-medium text-[color:var(--foreground)]">
+                              {entry.city}, {entry.country}
+                            </span>
+                            <p className="mt-0.5 truncate text-xs text-[color:var(--muted-foreground)]">{entry.summary}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section>
+                    <SectionHeader title="城市足迹" to="/euan/map" />
+                    <div className="flex flex-wrap gap-2">
+                      {footprintCities.map(fp => (
+                        <span
+                          key={fp.id}
+                          className="rounded-full border border-[color:var(--border)] bg-white/70 px-3 py-1 text-xs text-[color:var(--muted-foreground)]"
+                        >
+                          {fp.city}
+                          <span className="ml-1 opacity-60">{fp.visitCount}x</span>
                         </span>
-                        <p className="mt-0.5 truncate text-xs text-[color:var(--muted-foreground)]">{entry.summary}</p>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section>
+                    <SectionHeader title="飞行记录" to="/euan/flights" />
+                    <div className="text-sm text-[color:var(--muted-foreground)]">
+                      <div className="flex justify-between gap-4">
+                        <span>总里程</span>
+                        <span className="font-medium text-[color:var(--foreground)]">{totalDistance} km</span>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {flightRecords.slice(0, 3).map(f => (
+                          <div key={f.id} className="flex items-center gap-2 text-xs">
+                            <span className="w-14 shrink-0 font-medium text-[color:var(--foreground)]">{f.flightNo}</span>
+                            <span>{f.from}</span>
+                            <span className="h-px w-5 bg-[color:var(--accent)]" />
+                            <span>{f.to}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
-              </section>
-
-              <section>
-                <SectionHeader title="城市足迹" to="/euan/map" />
-                <div className="flex flex-wrap gap-2">
-                  {footprintCities.map(fp => (
-                    <span
-                      key={fp.id}
-                      className="rounded-full border border-[color:var(--border)] bg-white/70 px-3 py-1 text-xs text-[color:var(--muted-foreground)]"
-                    >
-                      {fp.city}
-                      <span className="ml-1 opacity-60">{fp.visitCount}x</span>
-                    </span>
-                  ))}
-                </div>
-              </section>
-
-              <section>
-                <SectionHeader title="飞行记录" to="/euan/flights" />
-                <div className="text-sm text-[color:var(--muted-foreground)]">
-                  <div className="flex justify-between gap-4">
-                    <span>总里程</span>
-                    <span className="font-medium text-[color:var(--foreground)]">{totalDistance} km</span>
+                  </section>
+                </>
+              ) : (
+                /* Private by default: a guest sees only that these modules
+                   exist and how much is in them, never the entries. */
+                <section>
+                  <div className="mb-3 flex items-baseline justify-between gap-4 border-b border-[color:var(--border)] pb-3">
+                    <h2 className="text-base font-medium text-[color:var(--foreground)]">私密板块</h2>
+                    <Link to="/login" className="text-xs text-[color:var(--muted-foreground)] transition-colors hover:text-[color:var(--primary)]">
+                      登录查看
+                    </Link>
                   </div>
-                  <div className="mt-3 space-y-2">
-                    {flightRecords.slice(0, 3).map(f => (
-                      <div key={f.id} className="flex items-center gap-2 text-xs">
-                        <span className="w-14 shrink-0 font-medium text-[color:var(--foreground)]">{f.flightNo}</span>
-                        <span>{f.from}</span>
-                        <span className="h-px w-5 bg-[color:var(--accent)]" />
-                        <span>{f.to}</span>
-                      </div>
+                  <div className="space-y-3">
+                    {[
+                      { label: '人生轨迹', to: '/euan/trajectory', count: `${trajectoryEntries.length} 条记录` },
+                      { label: '城市足迹', to: '/euan/map', count: `${footprintCities.length} 座城市` },
+                      { label: '飞行记录', to: '/euan/flights', count: `${flightRecords.length} 段航班` },
+                    ].map(m => (
+                      <Link
+                        key={m.to}
+                        to={m.to}
+                        className="flex items-center justify-between gap-4 border-b border-[color:var(--border)] pb-3 no-underline last:border-0"
+                      >
+                        <span className="text-sm text-[color:var(--foreground)]">{m.label}</span>
+                        <span className="text-xs text-[color:var(--muted-foreground)]">{m.count}</span>
+                      </Link>
                     ))}
                   </div>
-                </div>
-              </section>
+                  <p className="mt-4 text-xs leading-6 text-[color:var(--muted-foreground)]">
+                    隐私内容请登录后查看。
+                  </p>
+                </section>
+              )}
             </aside>
           </div>
         </section>

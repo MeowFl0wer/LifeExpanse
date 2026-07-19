@@ -3,17 +3,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import Logo from './Logo'
 import { useIsAdmin, useCurrentUser, clearCurrentUser } from '../auth'
 
-const navLinks = [
-  { label: '总览', to: '/app' },
-  { label: '随想', to: '/euan/thoughts' },
-  { label: '日记', to: '/euan/diary' },
-  { label: '笔记与文章', to: '/euan/pkm' },
-  { label: '人生轨迹', to: '/euan/trajectory' },
-  { label: '足迹地图', to: '/euan/map' },
-  { label: '飞行日志', to: '/euan/flights' },
-  { label: '独立空间', to: '/euan/space' },
-]
-
 const createOptions = [
   { label: '记随想', to: '/new/thought' },
   { label: '新建日记', to: '/new/diary' },
@@ -56,19 +45,6 @@ export default function AppHeader() {
           <Link to="/app" className="flex items-center text-[color:var(--foreground)] no-underline shrink-0">
             <Logo size="sm" />
           </Link>
-
-          {/* Desktop nav */}
-          <nav className="hidden lg:flex items-center gap-1 flex-1" aria-label="工作台导航">
-            {navLinks.map(link => (
-              <Link
-                key={link.to}
-                to={link.to}
-                className="px-3 py-1.5 text-sm text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] hover:bg-[color:var(--secondary)] transition-colors rounded-full"
-              >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
 
           <div className="flex items-center gap-3">
             {/* Create button */}
@@ -163,16 +139,6 @@ export default function AppHeader() {
 
         {menuOpen && (
           <nav className="lg:hidden py-3 border-t border-[color:var(--border)]" aria-label="移动端工作台导航">
-            {navLinks.map(link => (
-              <Link
-                key={link.to + 'mob'}
-                to={link.to}
-                className="block px-2 py-2.5 text-sm text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
-                onClick={() => setMenuOpen(false)}
-              >
-                {link.label}
-              </Link>
-            ))}
             <Link
               to="/search"
               className="block px-2 py-2.5 text-sm text-[color:var(--muted-foreground)] no-underline hover:text-[color:var(--foreground)]"

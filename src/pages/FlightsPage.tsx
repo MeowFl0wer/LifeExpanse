@@ -4,6 +4,7 @@ import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import WorldMap from '../components/WorldMap'
 import FlightCsvImport from '../components/FlightCsvImport'
+import PrivateModuleGate from '../components/PrivateModuleGate'
 import { flightRecords, airports } from '../mockData'
 import type { FlightRecord, FlightStatus } from '../types'
 import { useIsOwnerOf } from '../auth'
@@ -162,6 +163,14 @@ export default function FlightsPage() {
           )}
         </div>
 
+        {!isOwner ? (
+          <PrivateModuleGate
+            label="飞行记录"
+            summary={`${records.length} 段航班`}
+            preview="table"
+          />
+        ) : (
+        <>
         <div className="life-surface mb-10 flex flex-wrap divide-x divide-[color:var(--border)]">
           <StatBlock value={filtered.length} label="总航段" />
           <StatBlock value={totalDistance.toLocaleString()} label="总里程 (km)" />
@@ -345,6 +354,8 @@ export default function FlightsPage() {
             </div>
           )}
         </section>
+        </>
+        )}
       </main>
 
       <Footer />

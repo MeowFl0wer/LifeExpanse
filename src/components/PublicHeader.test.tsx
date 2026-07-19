@@ -22,12 +22,19 @@ describe('PublicHeader session state', () => {
     expect(screen.queryByText('登出')).toBeNull()
   })
 
-  it('shows logout and the workspace link once logged in', () => {
+  it('shows logout once logged in', () => {
     setCurrentUser('euan')
     renderHeader()
     expect(screen.getByText('登出')).toBeTruthy()
-    expect(screen.getByText('工作台')).toBeTruthy()
     expect(screen.queryByText('登录')).toBeNull()
+  })
+
+  // The homepage hero already offers 进入工作台, so the header must not
+  // duplicate it.
+  it('does not duplicate a workspace button in the header', () => {
+    setCurrentUser('euan')
+    renderHeader()
+    expect(screen.queryByText('工作台')).toBeNull()
   })
 
   // The original bug: the header read the session once at render, so logging in

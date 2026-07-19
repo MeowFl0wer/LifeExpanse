@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import WorldMap from '../components/WorldMap'
+import PrivateModuleGate from '../components/PrivateModuleGate'
 import { footprintCities, addTrajectoryEntry, recordFootprintVisit } from '../mockData'
 import type { FootprintCity } from '../types'
 import { useIsOwnerOf } from '../auth'
@@ -130,6 +131,14 @@ export default function FootprintMapPage() {
           )}
         </div>
 
+        {!isOwner ? (
+          <PrivateModuleGate
+            label="城市足迹"
+            summary={`${cities.length} 座城市 · ${countryCount} 个国家或地区`}
+            preview="map"
+          />
+        ) : (
+        <>
         <div className="life-surface mb-10 flex flex-wrap divide-x divide-[color:var(--border)]">
           <StatBlock value={countryCount} label="国家 / 地区" />
           <StatBlock value={cities.length} label="城市" />
@@ -279,6 +288,8 @@ export default function FootprintMapPage() {
             ))}
           </div>
         </section>
+        </>
+        )}
       </main>
 
       <Footer />

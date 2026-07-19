@@ -4,6 +4,7 @@ import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import TagList from '../components/TagList'
 import BatchTrajectoryForm from '../components/BatchTrajectoryForm'
+import PrivateModuleGate from '../components/PrivateModuleGate'
 import { trajectoryEntries, generateHeatmapData, addTrajectoryEntry, recordFootprintVisit } from '../mockData'
 import type { TrajectoryEntry } from '../types'
 import { useIsOwnerOf } from '../auth'
@@ -221,6 +222,14 @@ export default function TrajectoryPage() {
           <BatchTrajectoryForm onClose={() => setShowBatch(false)} onSubmit={handleBatchSubmit} />
         )}
 
+        {!isOwner ? (
+          <PrivateModuleGate
+            label="人生轨迹"
+            summary={`${trajectoryEntries.length} 条记录 · ${totalCities} 座城市`}
+            preview="rows"
+          />
+        ) : (
+        <>
         <section className="mb-12">
           <SectionTitle title="活跃热力图" desc="按日期查看最近一年的记录密度。" />
           <div className="life-surface p-4">
@@ -385,6 +394,8 @@ export default function TrajectoryPage() {
               ))
             )}
           </section>
+        )}
+        </>
         )}
       </main>
 

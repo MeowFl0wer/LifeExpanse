@@ -57,6 +57,7 @@ export default function SearchPage() {
   }, [query, visibleContent, typeFilter, visibilityFilter, tagFilter])
 
   const trajectoryResults = useMemo(() => {
+    if (!currentUser) return []
     if (!query || (typeFilter !== 'all' && typeFilter !== 'trajectory')) return []
     return trajectoryEntries.filter(
       e =>
@@ -64,14 +65,15 @@ export default function SearchPage() {
         e.country.toLowerCase().includes(query) ||
         e.summary.toLowerCase().includes(query)
     )
-  }, [query, typeFilter])
+  }, [query, typeFilter, currentUser])
 
   const placeResults = useMemo(() => {
+    if (!currentUser) return []
     if (!query || (typeFilter !== 'all' && typeFilter !== 'place')) return []
     return footprintCities.filter(
       c => c.city.toLowerCase().includes(query) || c.country.toLowerCase().includes(query)
     )
-  }, [query, typeFilter])
+  }, [query, typeFilter, currentUser])
 
   const totalCount = contentResults.length + trajectoryResults.length + placeResults.length
 
@@ -110,7 +112,9 @@ export default function SearchPage() {
         </form>
 
         <div className="mb-6 flex flex-wrap gap-2">
-          {typeFilters.map(f => (
+          {typeFilters
+            .filter(f => currentUser || (f.key !== 'trajectory' && f.key !== 'place'))
+            .map(f => (
             <button
               key={f.key}
               type="button"
@@ -150,7 +154,7 @@ export default function SearchPage() {
             <p className="text-sm text-[color:var(--muted-foreground)]">输入关键词开始搜索。</p>
             {!currentUser && (
               <p className="mt-2 text-xs text-[color:var(--muted-foreground)]">
-                未登录时只能搜索到公开内容。
+                未登录时只能搜索到公开内容；人生轨迹和城市足迹属于私密板块，需要登录。
               </p>
             )}
           </div>

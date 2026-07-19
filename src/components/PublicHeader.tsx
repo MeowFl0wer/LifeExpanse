@@ -56,14 +56,9 @@ export default function PublicHeader() {
               )
             })}
             {currentUser ? (
-              <div className="ml-2 flex items-center gap-2">
-                <Link to="/app" className="life-button text-sm">
-                  工作台
-                </Link>
-                <button type="button" onClick={handleLogout} className="life-button text-sm">
-                  登出
-                </button>
-              </div>
+              <button type="button" onClick={handleLogout} className="life-button ml-2 text-sm">
+                登出
+              </button>
             ) : (
               <Link to="/login" className="life-button ml-2 text-sm">
                 登录
@@ -112,22 +107,13 @@ export default function PublicHeader() {
               </Link>
             ))}
             {currentUser ? (
-              <>
-                <Link
-                  to="/app"
-                  className="mt-2 block px-2 py-2.5 text-sm font-medium text-[color:var(--primary)] no-underline"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  进入工作台 →
-                </Link>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="block w-full px-2 py-2.5 text-left text-sm text-[color:var(--muted-foreground)]"
-                >
-                  登出 @{currentUser}
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="mt-2 block w-full px-2 py-2.5 text-left text-sm text-[color:var(--muted-foreground)]"
+              >
+                登出 @{currentUser}
+              </button>
             ) : (
               <Link
                 to="/login"
