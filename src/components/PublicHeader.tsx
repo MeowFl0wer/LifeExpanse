@@ -10,6 +10,7 @@ const navLinks = [
   { label: '人生轨迹', to: '/euan/trajectory' },
   { label: '足迹地图', to: '/euan/map' },
   { label: '飞行轨迹', to: '/euan/flights' },
+  { label: '独立空间', to: '/euan/space' },
 ]
 
 export default function PublicHeader() {

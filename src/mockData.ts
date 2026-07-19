@@ -1,4 +1,8 @@
-import type { ContentItem, Thought, TrajectoryEntry, FootprintCity, FlightRecord, Airport, UserProfile, SiteStats } from './types'
+import type {
+  ContentItem, Thought, TrajectoryEntry, FootprintCity, FlightRecord, Airport, UserProfile, SiteStats,
+  EncryptedSpace, SpacePost, SpaceReply, ArticleComment, DeviceSession, AdminAccessRecord,
+  AdminUserRow, InvitationCode, SecurityLogEntry, RegistrationMode,
+} from './types'
 
 export const euanProfile: UserProfile = {
   username: 'euan',
@@ -403,3 +407,210 @@ export function generateHeatmapData(): { date: string; level: 0 | 1 | 2 | 3 | 4 
   }
   return data
 }
+
+/* ---- Ch 15: encrypted interactive spaces ---- */
+
+export const encryptedSpaces: EncryptedSpace[] = [
+  {
+    id: 'sp1',
+    spaceKey: 'k7f2a9d4e1b8',
+    owner: 'euan',
+    name: '给家人的信',
+    description: '写给家里人看的那些话。',
+    welcome: '如果你知道密码，就进来看看吧。',
+    password: 'family2024',
+    sessionTtlMinutes: 120,
+    allowReplies: true,
+    allowAnonymousReplies: true,
+    showReplyNickname: true,
+    showPostCount: true,
+    isActive: true,
+    createdAt: '2024-03-10T10:00:00Z',
+  },
+  {
+    id: 'sp2',
+    spaceKey: 'm3c8b5a2f7e0',
+    owner: 'euan',
+    name: '旧朋友',
+    description: '一些只想说给老朋友听的事。',
+    welcome: '很久不见。',
+    password: 'oldfriends',
+    sessionTtlMinutes: 60,
+    allowReplies: true,
+    allowAnonymousReplies: false,
+    showReplyNickname: true,
+    showPostCount: false,
+    isActive: true,
+    createdAt: '2024-06-22T14:00:00Z',
+  },
+]
+
+export const spacePosts: SpacePost[] = [
+  {
+    id: 'sps1',
+    spaceId: 'sp1',
+    title: '今年过年没能回家',
+    body: `今年过年没能回家。
+
+航班改签了三次，最后还是没赶上。视频里看到桌上摆了我的碗筷，妈说没关系，明年再回。
+
+我知道没关系，但还是想说一句对不起。
+
+> 有些距离不是公里数，是错过的那几顿饭。`,
+    summary: '航班改签三次，最后还是没赶上年夜饭。',
+    createdAt: '2024-02-10T13:20:00Z',
+  },
+  {
+    id: 'sps2',
+    spaceId: 'sp1',
+    title: '关于那间老房子',
+    body: `路过以前住的那条街，老房子还在，阳台上晾着别人家的衣服。
+
+小时候总觉得那个阳台很高，现在看其实就两层楼。`,
+    summary: '路过以前住的那条街，老房子还在。',
+    createdAt: '2024-05-18T09:00:00Z',
+  },
+  {
+    id: 'sps3',
+    spaceId: 'sp2',
+    title: '十年了',
+    body: `距离我们最后一次一起吃饭，好像正好十年。
+
+那天你说要去南方，我说好啊，然后我们谁也没再联系。不是吵架，就是各自忙起来了。
+
+如果你看到这条，随便回一句就行。`,
+    summary: '距离最后一次一起吃饭，正好十年。',
+    createdAt: '2024-07-01T20:30:00Z',
+  },
+]
+
+export const spaceReplies: SpaceReply[] = [
+  {
+    id: 'spr1', spaceId: 'sp1', postId: 'sps1',
+    nickname: '妈', content: '真的没关系，路上注意安全就好。',
+    isAuthor: false, createdAt: '2024-02-10T15:40:00Z',
+  },
+  {
+    id: 'spr2', spaceId: 'sp1', postId: 'sps1',
+    content: '明年一定回。', isAuthor: true, createdAt: '2024-02-11T08:12:00Z',
+  },
+  {
+    id: 'spr3', spaceId: 'sp2', postId: 'sps3',
+    nickname: '', content: '我也记得那天。南方挺好的，就是夏天太长。',
+    isAuthor: false, createdAt: '2024-07-03T22:05:00Z',
+  },
+]
+
+export function getSpaceByPassword(password: string): EncryptedSpace | undefined {
+  return encryptedSpaces.find(s => s.isActive && s.password === password.trim())
+}
+
+export function getSpaceByKey(spaceKey: string): EncryptedSpace | undefined {
+  return encryptedSpaces.find(s => s.spaceKey === spaceKey)
+}
+
+export function getSpacePosts(spaceId: string): SpacePost[] {
+  return spacePosts
+    .filter(p => p.spaceId === spaceId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+}
+
+export function getSpaceReplies(postId: string): SpaceReply[] {
+  return spaceReplies
+    .filter(r => r.postId === postId && !r.hidden)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+}
+
+export function addSpaceReply(reply: SpaceReply): void {
+  spaceReplies.push(reply)
+}
+
+export const SPACE_LIMIT = 5
+
+/* ---- Ch 11: article comments ---- */
+
+export const articleComments: ArticleComment[] = [
+  {
+    id: 'cm1',
+    contentId: 'b1',
+    author: 'alice',
+    authorDisplayName: 'Alice',
+    body: '数据主权这一段说到我了。我也是从 Notion 迁出来的，最后自己写了个静态站。',
+    createdAt: '2024-11-07T09:20:00Z',
+  },
+  {
+    id: 'cm2',
+    contentId: 'b1',
+    author: 'euan',
+    authorDisplayName: 'Euan',
+    body: '静态站其实挺好，就是想加动态功能的时候会比较痛苦。',
+    createdAt: '2024-11-07T14:05:00Z',
+  },
+]
+
+export function getComments(contentId: string): ArticleComment[] {
+  return articleComments
+    .filter(c => c.contentId === contentId && !c.hidden)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+}
+
+export function addComment(comment: ArticleComment): void {
+  articleComments.push(comment)
+}
+
+/* ---- Ch 4.4 / 19 / 21: account and admin ---- */
+
+export const deviceSessions: DeviceSession[] = [
+  { id: 'ds1', device: 'macOS · Chrome', location: '北京', lastActive: '2024-11-20 14:32', current: true },
+  { id: 'ds2', device: 'iPhone · Safari', location: '北京', lastActive: '2024-11-19 21:10', current: false },
+  { id: 'ds3', device: 'iPad · Safari', location: '伦敦', lastActive: '2024-11-02 08:44', current: false },
+]
+
+export const adminAccessRecords: AdminAccessRecord[] = []
+
+export const adminUsers: AdminUserRow[] = [
+  {
+    id: 'u1', username: 'euan', displayName: 'Euan', email: 'euan@example.com',
+    status: 'active', contentCount: 232, storageUsedMb: 412, storageLimitMb: 2048,
+    spaceLimit: 5, spacesUsed: 2, joinedAt: '2023-03-15',
+  },
+  {
+    id: 'u2', username: 'alice', displayName: 'Alice', email: 'alice@example.com',
+    status: 'active', contentCount: 18, storageUsedMb: 36, storageLimitMb: 1024,
+    spaceLimit: 3, spacesUsed: 0, joinedAt: '2024-08-02',
+  },
+  {
+    id: 'u3', username: 'bob', displayName: 'Bob', email: 'bob@example.com',
+    status: 'suspended', contentCount: 4, storageUsedMb: 8, storageLimitMb: 1024,
+    spaceLimit: 3, spacesUsed: 1, joinedAt: '2024-09-19',
+  },
+]
+
+export const invitationCodes: InvitationCode[] = [
+  { id: 'ic1', code: 'LIFE-7F2A-9D4E', createdAt: '2024-10-01', usedBy: 'alice', expiresAt: '2025-10-01' },
+  { id: 'ic2', code: 'LIFE-3C8B-5A2F', createdAt: '2024-11-05', expiresAt: '2025-11-05' },
+  { id: 'ic3', code: 'LIFE-B1D6-4E90', createdAt: '2024-11-18', expiresAt: '2025-11-18' },
+]
+
+export const securityLogs: SecurityLogEntry[] = [
+  { id: 'sl1', event: '登录成功', actor: 'euan', ip: '203.0.113.**', occurredAt: '2024-11-20 14:32', level: 'info' },
+  { id: 'sl2', event: '加密空间密码验证失败', actor: '匿名访客', ip: '198.51.100.**', occurredAt: '2024-11-20 11:07', level: 'warning' },
+  { id: 'sl3', event: '连续登录失败触发限流', actor: '匿名访客', ip: '198.51.100.**', occurredAt: '2024-11-20 11:05', level: 'warning' },
+  { id: 'sl4', event: '系统备份完成', actor: 'system', ip: '—', occurredAt: '2024-11-19 03:00', level: 'info' },
+  { id: 'sl5', event: '登录成功', actor: 'alice', ip: '203.0.113.**', occurredAt: '2024-11-18 19:22', level: 'info' },
+]
+
+export const registrationMode: RegistrationMode = 'invite'
+
+export const storageStats = {
+  usedMb: 412,
+  limitMb: 2048,
+  imageCount: 184,
+  videoCount: 7,
+}
+
+export const backupJobs = [
+  { id: 'bk1', createdAt: '2024-11-19 03:00', sizeMb: 486, status: '成功', kind: '自动' },
+  { id: 'bk2', createdAt: '2024-11-12 03:00', sizeMb: 471, status: '成功', kind: '自动' },
+  { id: 'bk3', createdAt: '2024-11-05 22:14', sizeMb: 468, status: '成功', kind: '手动' },
+]

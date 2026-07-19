@@ -3,7 +3,8 @@ import { useParams, Link } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import TagList from '../components/TagList'
-import { trajectoryEntries, generateHeatmapData } from '../mockData'
+import BatchTrajectoryForm from '../components/BatchTrajectoryForm'
+import { trajectoryEntries, generateHeatmapData, addTrajectoryEntry } from '../mockData'
 import type { TrajectoryEntry } from '../types'
 import { isOwnerOf } from '../auth'
 
@@ -73,6 +74,8 @@ export default function TrajectoryPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [filterCity, setFilterCity] = useState('')
   const [filterTag, setFilterTag] = useState('')
+  const [showBatch, setShowBatch] = useState(false)
+  const [batchTick, setBatchTick] = useState(0)
 
   const entriesByDate = useMemo(() => {
     const map = new Map<string, TrajectoryEntry[]>()
@@ -82,7 +85,7 @@ export default function TrajectoryPage() {
       map.set(entry.date, list)
     }
     return map
-  }, [])
+  }, [batchTick])
 
   const cities = useMemo(
     () => Array.from(new Set(trajectoryEntries.map(e => e.city))).sort(),
@@ -97,7 +100,7 @@ export default function TrajectoryPage() {
     return trajectoryEntries
       .filter(e => (!filterCity || e.city === filterCity) && (!filterTag || e.tags.some(t => t.name === filterTag)))
       .sort((a, b) => b.date.localeCompare(a.date))
-  }, [filterCity, filterTag])
+  }, [filterCity, filterTag, batchTick])
 
   const groupedByMonth = useMemo(() => {
     const groups: { label: string; entries: TrajectoryEntry[] }[] = []
@@ -133,8 +136,45 @@ export default function TrajectoryPage() {
 
   const selectedEntries = selectedDate ? entriesByDate.get(selectedDate) ?? [] : []
 
-  function handleRecordClick() {
-    alert('前端原型：将打开人生轨迹记录表单，支持选择连续或非连续的多个日期，并把地点、事项和心得一次性应用到所有选中日期。')
+  function handleBatchSubmit(
+    dates: string[],
+    data: { city: string; country: string; summary: string; writeToMap: boolean }
+  ) {
+    const batchId = `batch-${Date.now()}`
+    const existing = dates.filter(d => entriesByDate.has(d))
+    if (existing.length > 0) {
+      const proceed = window.confirm(
+        `其中 ${existing.length} 个日期已经存在记录（${existing.slice(0, 5).join('、')}${existing.length > 5 ? ' 等' : ''}）。\n\n` +
+        '确定 = 仍然新增，取消 = 跳过这些日期。'
+      )
+      if (!proceed) {
+        dates = dates.filter(d => !entriesByDate.has(d))
+        if (dates.length === 0) {
+          setShowBatch(false)
+          return
+        }
+      }
+    }
+
+    for (const date of dates) {
+      addTrajectoryEntry({
+        id: `tr-${batchId}-${date}`,
+        date,
+        city: data.city,
+        country: data.country || '—',
+        summary: data.summary || `在 ${data.city}`,
+        tags: [{ id: `tt-${batchId}`, name: '批量记录' }],
+        batchId,
+      })
+    }
+
+    setBatchTick(t => t + 1)
+    setShowBatch(false)
+    alert(
+      `已创建 ${dates.length} 条轨迹记录，使用同一个 batch_id 关联。\n\n` +
+      (data.writeToMap ? '每个日期也已分别生成足迹到访记录。\n\n' : '') +
+      '后续编辑时可以选择「只修改当前日期」或「修改本批次全部记录」。'
+    )
   }
 
   return (
@@ -154,11 +194,15 @@ export default function TrajectoryPage() {
             </p>
           </div>
           {isOwner && (
-            <button type="button" onClick={handleRecordClick} className="life-button life-button-primary text-sm">
-              记录轨迹
+            <button type="button" onClick={() => setShowBatch(v => !v)} className="life-button life-button-primary text-sm">
+              {showBatch ? '取消批量记录' : '批量记录'}
             </button>
           )}
         </div>
+
+        {isOwner && showBatch && (
+          <BatchTrajectoryForm onClose={() => setShowBatch(false)} onSubmit={handleBatchSubmit} />
+        )}
 
         <section className="mb-12">
           <SectionTitle title="活跃热力图" desc="按日期查看最近一年的记录密度。" />

@@ -5,6 +5,7 @@ import Footer from '../components/Footer'
 import TagList from '../components/TagList'
 import VisibilityBadge from '../components/VisibilityBadge'
 import MarkdownRenderer from '../components/MarkdownRenderer'
+import CommentSection from '../components/CommentSection'
 import { getContentBySlug } from '../mockData'
 import { isOwnerOf } from '../auth'
 
@@ -253,6 +254,15 @@ export default function ContentDetailPage() {
             </div>
           )}
         </article>
+
+        {/* Ch 11: comments belong to the article form of PKM content only. */}
+        {item.type === 'pkm' && contentKind === 'article' && (
+          <CommentSection
+            contentId={item.id}
+            contentAuthor={item.author}
+            allowComments={item.allowComments ?? false}
+          />
+        )}
 
         {/* Navigation */}
         <div className="mt-12 pt-6 border-t border-[color:var(--border)]">

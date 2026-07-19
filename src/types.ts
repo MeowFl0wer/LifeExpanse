@@ -117,3 +117,110 @@ export interface SiteStats {
   totalPV: number
   totalUV: number
 }
+
+/* ---- Ch 15: encrypted interactive spaces ---- */
+
+export interface EncryptedSpace {
+  id: string
+  /** Opaque, unguessable key used in the URL; never exposes the space name. */
+  spaceKey: string
+  owner: string
+  name: string
+  description: string
+  welcome: string
+  /** Prototype only. A real backend stores an HMAC fingerprint + Argon2id hash. */
+  password: string
+  sessionTtlMinutes: number
+  allowReplies: boolean
+  allowAnonymousReplies: boolean
+  showReplyNickname: boolean
+  showPostCount: boolean
+  isActive: boolean
+  createdAt: string
+}
+
+export interface SpacePost {
+  id: string
+  spaceId: string
+  title: string
+  body: string
+  summary: string
+  cover?: string
+  createdAt: string
+}
+
+export interface SpaceReply {
+  id: string
+  spaceId: string
+  postId: string
+  nickname?: string
+  content: string
+  isAuthor: boolean
+  hidden?: boolean
+  createdAt: string
+}
+
+/* ---- Ch 11: article comments ---- */
+
+export interface ArticleComment {
+  id: string
+  contentId: string
+  author: string
+  authorDisplayName: string
+  body: string
+  hidden?: boolean
+  createdAt: string
+}
+
+/* ---- Ch 4.4 / 21: account security and admin console ---- */
+
+export interface DeviceSession {
+  id: string
+  device: string
+  location: string
+  lastActive: string
+  current: boolean
+}
+
+export interface AdminAccessRecord {
+  id: string
+  admin: string
+  reason: string
+  ticket: string
+  scope: string
+  occurredAt: string
+  notifiedUser: boolean
+}
+
+export type RegistrationMode = 'closed' | 'invite' | 'open'
+
+export interface AdminUserRow {
+  id: string
+  username: string
+  displayName: string
+  email: string
+  status: 'active' | 'suspended'
+  contentCount: number
+  storageUsedMb: number
+  storageLimitMb: number
+  spaceLimit: number
+  spacesUsed: number
+  joinedAt: string
+}
+
+export interface InvitationCode {
+  id: string
+  code: string
+  createdAt: string
+  usedBy?: string
+  expiresAt: string
+}
+
+export interface SecurityLogEntry {
+  id: string
+  event: string
+  actor: string
+  ip: string
+  occurredAt: string
+  level: 'info' | 'warning'
+}

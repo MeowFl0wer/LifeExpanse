@@ -27,9 +27,17 @@
 | `/{username}/trajectory` | 人生轨迹（热力图 / 时间线 / 月历） |
 | `/{username}/map` | 足迹地图（城市级） |
 | `/{username}/flights` | 飞行日志与航线图 |
+| `/{username}/space` | 多密码加密互动空间入口 |
+| `/new/{type}` | 创建模式（随想 / 日记 / 笔记 / 文章 / 轨迹） |
+| `/search` | 统一搜索（遵守内容权限） |
+| `/account` | 账号资料、安全、数据导出与备份 |
+| `/admin` | 管理后台（仅站点主人） |
 
 内容详情页 `/{username}/{section}/{slug}` 默认只读，
 点击「编辑」后才进入 `/{username}/{section}/{slug}/edit` 编辑模式。
+
+加密空间遵循「密码即入口」：`/{username}/space` 只显示欢迎语和密码框，
+验证成功后进入 `/{username}/space/{opaque_key}`，会话只对该空间有效。
 
 ### 演示账号
 

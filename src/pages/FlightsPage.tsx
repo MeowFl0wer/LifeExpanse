@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import WorldMap from '../components/WorldMap'
+import FlightCsvImport from '../components/FlightCsvImport'
 import { flightRecords, airports } from '../mockData'
 import type { FlightRecord, FlightStatus } from '../types'
 import { isOwnerOf } from '../auth'
@@ -61,6 +62,7 @@ export default function FlightsPage() {
   const [yearFilter, setYearFilter] = useState('all')
   const [airlineFilter, setAirlineFilter] = useState('all')
   const [showAddForm, setShowAddForm] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [form, setForm] = useState(emptyFlight)
   const [formMsg, setFormMsg] = useState('')
 
@@ -150,10 +152,10 @@ export default function FlightsPage() {
           </div>
           {isOwner && (
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => alert('前端原型：CSV / Excel 导入需要真实后端支持字段映射、去重和错误提示。')} className="life-button text-sm">
-                导入 CSV
+              <button type="button" onClick={() => { setShowImport(v => !v); setShowAddForm(false) }} className="life-button text-sm">
+                {showImport ? '取消导入' : '导入 CSV'}
               </button>
-              <button type="button" onClick={() => setShowAddForm(v => !v)} className="life-button life-button-primary text-sm">
+              <button type="button" onClick={() => { setShowAddForm(v => !v); setShowImport(false) }} className="life-button life-button-primary text-sm">
                 {showAddForm ? '取消添加' : '新增记录'}
               </button>
             </div>
@@ -168,6 +170,19 @@ export default function FlightsPage() {
           <StatBlock value={countryCount} label="到访国家" />
           <StatBlock value={topAirline} label="最常乘坐" />
         </div>
+
+        {isOwner && showImport && (
+          <FlightCsvImport
+            existing={records}
+            knownAirports={Object.keys(airports)}
+            onClose={() => setShowImport(false)}
+            onImport={imported => {
+              setRecords(prev => [...prev, ...imported])
+              setShowImport(false)
+              alert(`导入完成：新增 ${imported.length} 条飞行记录。`)
+            }}
+          />
+        )}
 
         {isOwner && showAddForm && (
           <section className="life-surface mb-10 p-6">
