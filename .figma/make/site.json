@@ -1,0 +1,17 @@
+{
+  "title": "LifeExpanse",
+  "description": "A clear personal space for notes, articles, thoughts, places, and life traces.",
+  "language": "zh-CN",
+  "robots": {
+    "index": true
+  },
+  "icons": {
+    "icon": "/brand/lifeexpanse-icon.png"
+  },
+  "openGraph": {
+    "image": "/brand/hero-lifeexpanse-desktop.png"
+  },
+  "accessibility": {
+    "addBypassLinks": false
+  }
+}
