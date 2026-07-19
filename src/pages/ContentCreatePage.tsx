@@ -10,10 +10,34 @@ import {
 import { slugify } from '../lib/slug'
 import { extractHashTags, normaliseMembership } from '../lib/library'
 import LibraryPicker from '../components/LibraryPicker'
+import AutosaveIndicator from '../components/AutosaveStatus'
+import DraftRestoredBanner from '../components/DraftRestoredBanner'
+import { useAutosave } from '../hooks/useAutosave'
+import { loadDraft, createKey, type Draft } from '../api/drafts'
 import { parseMarkdownFile, validateMarkdownFile } from '../lib/markdownImport'
 import type { ContentItem, ContentKind, ContentType, ThoughtType, ThoughtSourceType, Visibility } from '../types'
 
 type CreateType = 'thought' | 'diary' | 'note' | 'article' | 'trajectory'
+
+/** Everything the create form holds, so a draft restores it exactly. */
+interface CreateDraft {
+  title: string
+  body: string
+  tagInput: string
+  visibility: Visibility
+  contentKind: ContentKind
+  thoughtType: ThoughtType
+  sourceAuthor: string
+  sourceTitle: string
+  sourceType: ThoughtSourceType
+  sourceUrl: string
+  sourceLocator: string
+  trajDate: string
+  trajCity: string
+  trajCountry: string
+  folderIds: string[]
+  seriesIds: string[]
+}
 type Tab = 'write' | 'preview'
 
 const typeConfig: Record<CreateType, { label: string; section: string; titlePlaceholder: string; bodyPlaceholder: string; requiresTitle: boolean }> = {
@@ -69,6 +93,54 @@ export default function ContentCreatePage() {
   const [folderIds, setFolderIds] = useState<string[]>([])
   const [seriesIds, setSeriesIds] = useState<string[]>([])
   const [, bumpLibrary] = useState(0)
+  const isDirty = Boolean(title || body || tagInput || trajCity || sourceTitle)
+
+  const [restored, setRestored] = useState<Draft<CreateDraft> | null>(null)
+  const [draftChecked, setDraftChecked] = useState(false)
+
+  const draftValue: CreateDraft = {
+    title, body, tagInput, visibility, contentKind, thoughtType,
+    sourceAuthor, sourceTitle, sourceType, sourceUrl, sourceLocator,
+    trajDate, trajCity, trajCountry, folderIds, seriesIds,
+  }
+
+  const autosave = useAutosave({
+    // One draft per content type: starting a second note replaces the first.
+    key: createKey(createType),
+    value: draftValue,
+    dirty: isDirty,
+  })
+
+  // Restore an unfinished draft once, before the user starts typing.
+  useEffect(() => {
+    if (draftChecked) return
+    let cancelled = false
+    void loadDraft<CreateDraft>(createKey(createType)).then(draft => {
+      if (cancelled) return
+      if (draft) {
+        const d = draft.data
+        setTitle(d.title)
+        setBody(d.body)
+        setTagInput(d.tagInput)
+        setVisibility(d.visibility)
+        setContentKind(d.contentKind)
+        setThoughtType(d.thoughtType)
+        setSourceAuthor(d.sourceAuthor)
+        setSourceTitle(d.sourceTitle)
+        setSourceType(d.sourceType)
+        setSourceUrl(d.sourceUrl)
+        setSourceLocator(d.sourceLocator)
+        setTrajDate(d.trajDate)
+        setTrajCity(d.trajCity)
+        setTrajCountry(d.trajCountry)
+        setFolderIds(d.folderIds)
+        setSeriesIds(d.seriesIds)
+        setRestored(draft)
+      }
+      setDraftChecked(true)
+    })
+    return () => { cancelled = true }
+  }, [createType, draftChecked])
 
   function createFolder(name: string): string {
     const id = nextId('fd')
@@ -128,7 +200,6 @@ export default function ContentCreatePage() {
     reader.readAsText(file)
   }
 
-  const isDirty = Boolean(title || body || tagInput || trajCity || sourceTitle)
 
   useEffect(() => {
     function handleBeforeUnload(e: BeforeUnloadEvent) {
@@ -209,6 +280,7 @@ export default function ContentCreatePage() {
             : '\n\n该城市暂无坐标，已加入足迹列表并标记为待确认，不会出现在地图上。'
       }
 
+      autosave.discard()
       setSaving(false)
       alert(`已创建 1 条人生轨迹记录。${mapNote}`)
       navigate(`/${currentUser}/trajectory`)
@@ -254,6 +326,7 @@ export default function ContentCreatePage() {
     }
 
     addContentItem(item)
+    autosave.discard()
     setSaving(false)
     navigate(`/${currentUser}/${config.section}/${slug}`)
   }
@@ -269,6 +342,7 @@ export default function ContentCreatePage() {
               <span className="truncate text-xs text-[color:var(--muted-foreground)]">新建{config.label}</span>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              <AutosaveIndicator status={autosave.status} savedAt={autosave.savedAt} />
               <button type="button" onClick={handleCancel} disabled={saving} className="life-button text-xs disabled:opacity-50">
                 取消
               </button>
@@ -282,6 +356,20 @@ export default function ContentCreatePage() {
 
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
         <div className="space-y-5">
+          {restored && (
+            <DraftRestoredBanner
+              savedAt={restored.savedAt}
+              onDiscard={() => {
+                setTitle(''); setBody(''); setTagInput('')
+                setSourceAuthor(''); setSourceTitle(''); setSourceUrl(''); setSourceLocator('')
+                setTrajDate(''); setTrajCity(''); setTrajCountry('')
+                setFolderIds([]); setSeriesIds([])
+                autosave.discard()
+                setRestored(null)
+              }}
+            />
+          )}
+
           {supportsImport && (
             <div
               className={`life-surface flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${

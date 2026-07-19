@@ -1,0 +1,119 @@
+import { ok } from './client'
+
+/**
+ * In-progress edits, kept so closing the tab mid-sentence does not lose work.
+ *
+ * These live in localStorage rather than the in-memory store: the store resets
+ * on reload, which is exactly the case this feature exists to survive. 需求
+ * 25.2 also asks that a draft outlive a dropped connection, so a local copy is
+ * the right primitive even once a backend exists — at that point this module
+ * additionally pushes to the server and reconciles on load.
+ */
+
+const PREFIX = 'life_draft:'
+/** Drafts older than this are dropped, so abandoned edits do not accumulate. */
+const MAX_AGE_DAYS = 14
+
+export interface Draft<T> {
+  key: string
+  savedAt: string
+  /**
+   * `updatedAt` of the item when editing began. Lets the editor notice the
+   * content changed elsewhere while a draft was sitting unsaved.
+   */
+  baseUpdatedAt?: string
+  data: T
+}
+
+/** Key for editing an existing item. */
+export function editKey(contentId: string): string {
+  return `edit:${contentId}`
+}
+
+/** Key for a new item that has not been saved yet. */
+export function createKey(type: string): string {
+  return `new:${type}`
+}
+
+function storage(): Storage | null {
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+function isFresh(savedAt: string, now: number): boolean {
+  const t = new Date(savedAt).getTime()
+  if (Number.isNaN(t)) return false
+  return now - t < MAX_AGE_DAYS * 24 * 60 * 60 * 1000
+}
+
+export async function saveDraft<T>(
+  key: string,
+  data: T,
+  baseUpdatedAt?: string
+): Promise<Draft<T>> {
+  const draft: Draft<T> = { key, savedAt: new Date().toISOString(), baseUpdatedAt, data }
+  try {
+    storage()?.setItem(PREFIX + key, JSON.stringify(draft))
+  } catch {
+    // Quota or private mode — autosave degrades to nothing rather than throwing
+    // in the middle of typing.
+  }
+  return ok(draft)
+}
+
+export async function loadDraft<T>(key: string): Promise<Draft<T> | null> {
+  const raw = storage()?.getItem(PREFIX + key)
+  if (!raw) return ok(null)
+  try {
+    const parsed = JSON.parse(raw) as Draft<T>
+    if (!parsed?.savedAt || !isFresh(parsed.savedAt, Date.now())) {
+      storage()?.removeItem(PREFIX + key)
+      return ok(null)
+    }
+    return ok(parsed)
+  } catch {
+    storage()?.removeItem(PREFIX + key)
+    return ok(null)
+  }
+}
+
+export async function clearDraft(key: string): Promise<void> {
+  try {
+    storage()?.removeItem(PREFIX + key)
+  } catch {
+    // ignore
+  }
+  return ok(undefined)
+}
+
+/** Every stored draft, newest first. Used by the workspace to surface them. */
+export async function listDrafts(): Promise<Draft<unknown>[]> {
+  const store = storage()
+  if (!store) return ok([])
+
+  const drafts: Draft<unknown>[] = []
+  const stale: string[] = []
+  const now = Date.now()
+
+  for (let i = 0; i < store.length; i++) {
+    const storageKey = store.key(i)
+    if (!storageKey?.startsWith(PREFIX)) continue
+    try {
+      const parsed = JSON.parse(store.getItem(storageKey) ?? '') as Draft<unknown>
+      if (!parsed?.savedAt || !isFresh(parsed.savedAt, now)) {
+        stale.push(storageKey)
+        continue
+      }
+      drafts.push(parsed)
+    } catch {
+      stale.push(storageKey)
+    }
+  }
+
+  for (const key of stale) store.removeItem(key)
+
+  return ok(drafts.sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()))
+}

@@ -8,10 +8,34 @@ import {
   folders as allFolders, series as allSeries, addFolder, addSeries, nextId } from '../mockData'
 import { extractHashTags, normaliseMembership } from '../lib/library'
 import LibraryPicker from '../components/LibraryPicker'
+import AutosaveIndicator from '../components/AutosaveStatus'
+import DraftRestoredBanner from '../components/DraftRestoredBanner'
+import { useAutosave } from '../hooks/useAutosave'
+import { loadDraft, editKey, type Draft } from '../api/drafts'
 import type { ContentKind, ThoughtType, Visibility } from '../types'
 import { useCurrentUser } from '../auth'
 
 type Tab = 'write' | 'preview'
+
+/** Everything the editor holds, so a draft can restore the form exactly. */
+interface EditorDraft {
+  title: string
+  body: string
+  tagInput: string
+  visibility: Visibility
+  contentKind: ContentKind
+  thoughtType: ThoughtType
+  allowComments: boolean
+  summary: string
+  cover: string
+  category: string
+  seoTitle: string
+  seoDescription: string
+  favorite: boolean
+  archived: boolean
+  folderIds: string[]
+  seriesIds: string[]
+}
 
 interface ContentEditPageProps {
   section: 'thoughts' | 'diary' | 'pkm'
@@ -41,9 +65,10 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
   const [seriesIds, setSeriesIds] = useState<string[]>(item?.seriesIds ?? [])
   const [, bumpLibrary] = useState(0)
   const [tab, setTab] = useState<Tab>('write')
+  const [restored, setRestored] = useState<Draft<EditorDraft> | null>(null)
+  const [draftChecked, setDraftChecked] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [autoSaveMsg, setAutoSaveMsg] = useState('')
 
   const isDirty =
     title !== (item?.title ?? '') ||
@@ -75,15 +100,50 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [isDirty])
 
-  // Auto-save simulation
+  // Everything the editor holds, so a restored draft can rebuild the form.
+  const draftValue: EditorDraft = {
+    title, body, tagInput, visibility, contentKind, thoughtType, allowComments,
+    summary, cover, category, seoTitle, seoDescription, favorite, archived,
+    folderIds, seriesIds,
+  }
+
+  const autosave = useAutosave({
+    key: item ? editKey(item.id) : null,
+    value: draftValue,
+    dirty: isDirty,
+    baseUpdatedAt: item?.updatedAt,
+  })
+
+  // Restore an unsaved draft once, before the user starts typing.
   useEffect(() => {
-    if (!isDirty) return
-    const t = setTimeout(() => {
-      setAutoSaveMsg('草稿已自动保存')
-      setTimeout(() => setAutoSaveMsg(''), 2500)
-    }, 3000)
-    return () => clearTimeout(t)
-  }, [title, body, tagInput, visibility, isDirty])
+    if (!item || draftChecked) return
+    let cancelled = false
+    void loadDraft<EditorDraft>(editKey(item.id)).then(draft => {
+      if (cancelled) { return }
+      if (draft) {
+        const d = draft.data
+        setTitle(d.title)
+        setBody(d.body)
+        setTagInput(d.tagInput)
+        setVisibility(d.visibility)
+        setContentKind(d.contentKind)
+        setThoughtType(d.thoughtType)
+        setAllowComments(d.allowComments)
+        setSummary(d.summary)
+        setCover(d.cover)
+        setCategory(d.category)
+        setSeoTitle(d.seoTitle)
+        setSeoDescription(d.seoDescription)
+        setFavorite(d.favorite)
+        setArchived(d.archived)
+        setFolderIds(d.folderIds)
+        setSeriesIds(d.seriesIds)
+        setRestored(draft)
+      }
+      setDraftChecked(true)
+    })
+    return () => { cancelled = true }
+  }, [item?.id, draftChecked])
 
   function handleCancel() {
     if (isDirty) {
@@ -127,6 +187,7 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
       updatedAt: new Date().toISOString(),
     })
 
+    autosave.discard()
     setSaving(false)
     setSaved(true)
     setTimeout(() => {
@@ -202,9 +263,7 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {autoSaveMsg && (
-                <span className="text-xs text-[color:var(--muted-foreground)]">{autoSaveMsg}</span>
-              )}
+              <AutosaveIndicator status={autosave.status} savedAt={autosave.savedAt} />
               <button
                 type="button"
                 onClick={handleCancel}
@@ -236,6 +295,35 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
 
       <main className="flex-1 max-w-4xl mx-auto w-full px-6 py-8">
         <div className="space-y-5">
+          {restored && (
+            <DraftRestoredBanner
+              savedAt={restored.savedAt}
+              stale={Boolean(
+                restored.baseUpdatedAt && item.updatedAt && restored.baseUpdatedAt !== item.updatedAt
+              )}
+              onDiscard={() => {
+                // Back to what is actually stored.
+                setTitle(item.title)
+                setBody(item.body)
+                setTagInput(item.tags.map(t => t.name).join(', '))
+                setVisibility(item.visibility)
+                setContentKind(item.contentKind ?? 'note')
+                setThoughtType(item.thoughtType ?? 'original')
+                setAllowComments(item.allowComments ?? false)
+                setSummary(item.summary ?? '')
+                setCover(item.cover ?? '')
+                setCategory(item.category ?? '')
+                setSeoTitle(item.seoTitle ?? '')
+                setSeoDescription(item.seoDescription ?? '')
+                setFavorite(item.favorite ?? false)
+                setArchived(item.archived ?? false)
+                setFolderIds(item.folderIds ?? [])
+                setSeriesIds(item.seriesIds ?? [])
+                autosave.discard()
+                setRestored(null)
+              }}
+            />
+          )}
           {/* Title */}
           <div>
             <label htmlFor="edit-title" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">

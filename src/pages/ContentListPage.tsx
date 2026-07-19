@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
@@ -15,6 +15,9 @@ import {
 import { itemsInFolder, foldersInSeries, looseItemsInSeries, allItemsInSeries } from '../lib/library'
 import { removeFolder, removeSeries } from '../api/pkm'
 import { loginUrlFor } from '../lib/redirect'
+import { useAutosave } from '../hooks/useAutosave'
+import { loadDraft, createKey } from '../api/drafts'
+import AutosaveIndicator from '../components/AutosaveStatus'
 import type { ContentItem, Folder, Series, ThoughtType, Visibility } from '../types'
 import { useIsOwnerOf, useCurrentUser } from '../auth'
 
@@ -80,6 +83,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
   const [quickText, setQuickText] = useState('')
   const [quickSourceTitle, setQuickSourceTitle] = useState('')
   const [quickSourceAuthor, setQuickSourceAuthor] = useState('')
+  const [quickDraftChecked, setQuickDraftChecked] = useState(false)
   const [showFolderForm, setShowFolderForm] = useState(false)
   const [showSeriesForm, setShowSeriesForm] = useState(false)
   const [editingFolder, setEditingFolder] = useState(false)
@@ -108,6 +112,36 @@ export default function ContentListPage({ section }: ContentListPageProps) {
   // something public.
   const authorFolders = allFolders.filter(f => f.owner === username)
   const authorSeries = allSeries.filter(s => s.owner === username)
+  // The quick capture box is easy to abandon by navigating away, so it keeps
+  // its own draft too.
+  interface QuickDraft {
+    quickText: string
+    quickThoughtType: ThoughtType
+    quickSourceAuthor: string
+    quickSourceTitle: string
+  }
+  const quickAutosave = useAutosave<QuickDraft>({
+    key: sec === 'thoughts' && isOwner ? createKey('quick-thought') : null,
+    value: { quickText, quickThoughtType, quickSourceAuthor, quickSourceTitle },
+    dirty: quickText.trim().length > 0,
+  })
+
+  useEffect(() => {
+    if (sec !== 'thoughts' || !isOwner || quickDraftChecked) return
+    let cancelled = false
+    void loadDraft<QuickDraft>(createKey('quick-thought')).then(draft => {
+      if (cancelled) return
+      if (draft?.data.quickText) {
+        setQuickText(draft.data.quickText)
+        setQuickThoughtType(draft.data.quickThoughtType)
+        setQuickSourceAuthor(draft.data.quickSourceAuthor)
+        setQuickSourceTitle(draft.data.quickSourceTitle)
+      }
+      setQuickDraftChecked(true)
+    })
+    return () => { cancelled = true }
+  }, [sec, isOwner, quickDraftChecked])
+
   const ownFolders = isOwner
     ? authorFolders
     : authorFolders.filter(f => itemsInFolder(baseItems, f.id).length > 0)
@@ -207,6 +241,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
           }
         : {}),
     })
+    quickAutosave.discard()
     setQuickText('')
     setQuickSourceTitle('')
     setQuickSourceAuthor('')
@@ -344,7 +379,10 @@ export default function ContentListPage({ section }: ContentListPageProps) {
                   </>
                 )}
               </p>
-              <button type="submit" className="life-button life-button-primary text-sm">保存随想</button>
+              <span className="flex items-center gap-3">
+                <AutosaveIndicator status={quickAutosave.status} savedAt={quickAutosave.savedAt} />
+                <button type="submit" className="life-button life-button-primary text-sm">保存随想</button>
+              </span>
             </div>
           </form>
         )}
