@@ -4,7 +4,7 @@ import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import ContentCard from '../components/ContentCard'
 import { allContent, trajectoryEntries, footprintCities } from '../mockData'
-import { getCurrentUser } from '../auth'
+import { useCurrentUser } from '../auth'
 import type { ContentItem, Visibility } from '../types'
 
 type TypeFilter = 'all' | 'thought' | 'diary' | 'pkm' | 'trajectory' | 'place'
@@ -20,7 +20,7 @@ const typeFilters: { key: TypeFilter; label: string }[] = [
 
 export default function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const currentUser = getCurrentUser()
+  const currentUser = useCurrentUser()
 
   const [keyword, setKeyword] = useState(searchParams.get('q') ?? '')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')

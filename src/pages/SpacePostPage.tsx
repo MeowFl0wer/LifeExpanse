@@ -4,7 +4,7 @@ import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import { getSpaceByKey, getSpacePosts, getSpaceReplies, addSpaceReply } from '../mockData'
-import { isOwnerOf, hasSpaceSession } from '../auth'
+import { useIsOwnerOf, hasSpaceSession } from '../auth'
 import type { SpaceReply } from '../types'
 
 function formatDateTime(dateStr: string): string {
@@ -16,7 +16,7 @@ function formatDateTime(dateStr: string): string {
 export default function SpacePostPage() {
   const { username, spaceKey, postId } = useParams<{ username: string; spaceKey: string; postId: string }>()
   const space = getSpaceByKey(spaceKey ?? '')
-  const isOwner = isOwnerOf(username)
+  const isOwner = useIsOwnerOf(username)
 
   const [nickname, setNickname] = useState('')
   const [replyText, setReplyText] = useState('')

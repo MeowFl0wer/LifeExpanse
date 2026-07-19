@@ -5,13 +5,18 @@ import MediaInsertMenu from '../components/MediaInsertMenu'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import { getContentBySlug } from '../mockData'
 import type { ContentKind, ThoughtType, Visibility } from '../types'
-import { isOwnerOf } from '../auth'
+import { useCurrentUser } from '../auth'
 
 type Tab = 'write' | 'preview'
 
-export default function ContentEditPage() {
-  const { username, section, slug } = useParams<{ username: string; section: string; slug: string }>()
+interface ContentEditPageProps {
+  section: 'thoughts' | 'diary' | 'pkm'
+}
+
+export default function ContentEditPage({ section }: ContentEditPageProps) {
+  const { username, slug } = useParams<{ username: string; slug: string }>()
   const navigate = useNavigate()
+  const currentUser = useCurrentUser()
   const item = getContentBySlug(slug ?? '')
 
   const [title, setTitle] = useState(item?.title ?? '')
@@ -92,7 +97,7 @@ export default function ContentEditPage() {
     )
   }
 
-  if (!isOwnerOf(item.author)) {
+  if (currentUser !== item.author) {
     return (
       <div className="life-page flex min-h-screen items-center justify-center">
         <p className="text-sm text-[color:var(--muted-foreground)]">你没有权限编辑这条内容</p>

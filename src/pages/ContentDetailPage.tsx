@@ -7,7 +7,7 @@ import VisibilityBadge from '../components/VisibilityBadge'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import CommentSection from '../components/CommentSection'
 import { getContentBySlug } from '../mockData'
-import { isOwnerOf } from '../auth'
+import { useCurrentUser } from '../auth'
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return ''
@@ -46,16 +46,23 @@ function ExternalLinkCard({ url, title, platform }: { url: string; title: string
   )
 }
 
-export default function ContentDetailPage() {
-  const { username, section, slug } = useParams<{ username: string; section: string; slug: string }>()
+interface ContentDetailPageProps {
+  section: 'thoughts' | 'diary' | 'pkm'
+}
+
+export default function ContentDetailPage({ section }: ContentDetailPageProps) {
+  const { username, slug } = useParams<{ username: string; slug: string }>()
   const navigate = useNavigate()
+  const currentUser = useCurrentUser()
   const item = getContentBySlug(slug ?? '')
   const [localContentKind, setLocalContentKind] = useState(item?.contentKind)
+
+  const isOwner = item !== undefined && currentUser === item.author
 
   // Private and draft content must be unreachable by anyone but its author —
   // including by guessing the slug. Returning the same 404 as a missing item
   // avoids leaking the fact that the content exists at all.
-  if (!item || (item.visibility !== 'public' && !isOwnerOf(item.author))) {
+  if (!item || (item.visibility !== 'public' && !isOwner)) {
     return (
       <div className="life-page flex min-h-screen flex-col">
         <PublicHeader />
@@ -73,7 +80,6 @@ export default function ContentDetailPage() {
     )
   }
 
-  const isOwner = isOwnerOf(item.author)
   const contentKind = localContentKind ?? item.contentKind
   const typeLabel: Record<string, string> = { diary: '日记', pkm: '笔记与文章', thought: '随想' }
   const thoughtTypeLabel = item.thoughtType === 'excerpt' ? '摘录' : '原创'

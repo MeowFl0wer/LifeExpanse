@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Logo from './Logo'
-import { isAdmin } from '../auth'
+import { useIsAdmin, useCurrentUser, clearCurrentUser } from '../auth'
 
 const navLinks = [
   { label: '总览', to: '/app' },
@@ -28,6 +28,14 @@ export default function AppHeader() {
   const [createOpen, setCreateOpen] = useState(false)
   const createRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const currentUser = useCurrentUser()
+  const admin = useIsAdmin()
+
+  function handleLogout() {
+    clearCurrentUser()
+    setMenuOpen(false)
+    navigate('/')
+  }
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -115,10 +123,18 @@ export default function AppHeader() {
             >
               <img
                 src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=32&h=32&fit=crop&auto=format"
-                alt="euan"
+                alt={currentUser ?? ''}
                 className="w-7 h-7 rounded-full object-cover"
               />
-              <span className="hidden md:inline text-xs">euan</span>
+              <span className="hidden md:inline text-xs">{currentUser}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="hidden text-xs text-[color:var(--muted-foreground)] transition-colors hover:text-[color:var(--foreground)] sm:inline"
+            >
+              登出
             </button>
 
             {/* Mobile menu */}
@@ -171,7 +187,7 @@ export default function AppHeader() {
             >
               账号与备份
             </Link>
-            {isAdmin() && (
+            {admin && (
               <Link
                 to="/admin"
                 className="block px-2 py-2.5 text-sm text-[color:var(--muted-foreground)] no-underline hover:text-[color:var(--foreground)]"
@@ -185,6 +201,13 @@ export default function AppHeader() {
               onClick={() => { setMenuOpen(false); navigate('/') }}
             >
               公开主页
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="block w-full border-t border-[color:var(--border)] px-2 py-2.5 text-left text-sm text-[color:var(--muted-foreground)]"
+            >
+              登出 @{currentUser}
             </button>
           </nav>
         )}

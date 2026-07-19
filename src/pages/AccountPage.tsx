@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import { euanProfile, deviceSessions, adminAccessRecords, storageStats } from '../mockData'
-import { getCurrentUser, clearCurrentUser } from '../auth'
+import { useCurrentUser, clearCurrentUser } from '../auth'
 
 type Tab = 'profile' | 'security' | 'data'
 
@@ -23,7 +23,7 @@ function SectionTitle({ title, desc }: { title: string; desc?: string }) {
 
 export default function AccountPage() {
   const navigate = useNavigate()
-  const currentUser = getCurrentUser()
+  const currentUser = useCurrentUser()
   const [tab, setTab] = useState<Tab>('profile')
 
   const [displayName, setDisplayName] = useState(euanProfile.displayName)

@@ -1,11 +1,46 @@
+import { useSyncExternalStore } from 'react'
+
 const SESSION_KEY = 'life_session_user'
 
-export function getCurrentUser(): string | null {
+/* The session is a reactive store rather than a bare localStorage read.
+ * Reading localStorage during render gives the right answer once but never
+ * updates, so a header rendered before login keeps showing the logged-out
+ * state until a full reload. Subscribers are notified on every change, and
+ * `storage` events keep other tabs in sync. */
+
+type Listener = () => void
+const listeners = new Set<Listener>()
+
+/** Cached so getSnapshot returns a stable reference between notifications. */
+let cachedUser: string | null = readSession()
+
+function readSession(): string | null {
   try {
     return window.localStorage.getItem(SESSION_KEY)
   } catch {
     return null
   }
+}
+
+function emit(): void {
+  cachedUser = readSession()
+  for (const listener of listeners) listener()
+}
+
+if (typeof window !== 'undefined') {
+  // Login or logout in another tab should not leave this one stale.
+  window.addEventListener('storage', event => {
+    if (event.key === SESSION_KEY || event.key === null) emit()
+  })
+}
+
+function subscribe(listener: Listener): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+export function getCurrentUser(): string | null {
+  return cachedUser
 }
 
 export function setCurrentUser(username: string): void {
@@ -14,6 +49,7 @@ export function setCurrentUser(username: string): void {
   } catch {
     // localStorage unavailable (private mode, disabled storage) — session simply won't persist
   }
+  emit()
 }
 
 export function clearCurrentUser(): void {
@@ -22,6 +58,15 @@ export function clearCurrentUser(): void {
   } catch {
     // ignore
   }
+  emit()
+}
+
+/**
+ * Subscribes a component to the session. Use this instead of getCurrentUser()
+ * anywhere the UI must change when the user logs in or out.
+ */
+export function useCurrentUser(): string | null {
+  return useSyncExternalStore(subscribe, getCurrentUser, () => null)
 }
 
 export function isLoggedIn(): boolean {
@@ -38,6 +83,23 @@ export function isAdmin(): boolean {
 export function isOwnerOf(username: string | undefined): boolean {
   if (!username) return false
   return getCurrentUser() === username
+}
+
+/* Reactive variants. Prefer these inside components so the UI updates the
+ * moment the session changes, instead of only after a remount. */
+
+export function useIsLoggedIn(): boolean {
+  return useCurrentUser() !== null
+}
+
+export function useIsAdmin(): boolean {
+  return useCurrentUser() === SITE_OWNER
+}
+
+export function useIsOwnerOf(username: string | undefined): boolean {
+  const current = useCurrentUser()
+  if (!username) return false
+  return current === username
 }
 
 /* ---- Ch 15.6: visitor sessions for encrypted spaces ----

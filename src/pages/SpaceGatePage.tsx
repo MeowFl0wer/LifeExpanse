@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import { encryptedSpaces, getSpaceByPassword, getSpacePosts, SPACE_LIMIT } from '../mockData'
-import { isOwnerOf, grantSpaceSession } from '../auth'
+import { useIsOwnerOf, grantSpaceSession } from '../auth'
 
 const MAX_ATTEMPTS = 5
 const LOCK_SECONDS = 30
@@ -11,7 +11,7 @@ const LOCK_SECONDS = 30
 export default function SpaceGatePage() {
   const { username } = useParams<{ username: string }>()
   const navigate = useNavigate()
-  const isOwner = isOwnerOf(username)
+  const isOwner = useIsOwnerOf(username)
 
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')

@@ -5,7 +5,7 @@ import Footer from '../components/Footer'
 import WorldMap from '../components/WorldMap'
 import { footprintCities, addTrajectoryEntry, recordFootprintVisit } from '../mockData'
 import type { FootprintCity } from '../types'
-import { isOwnerOf } from '../auth'
+import { useIsOwnerOf } from '../auth'
 
 type SortKey = 'visitCount' | 'lastVisit' | 'city'
 
@@ -39,7 +39,7 @@ const emptyForm = {
 
 export default function FootprintMapPage() {
   const { username } = useParams<{ username: string }>()
-  const isOwner = isOwnerOf(username)
+  const isOwner = useIsOwnerOf(username)
 
   const [cities, setCities] = useState<FootprintCity[]>(footprintCities)
   const [sortKey, setSortKey] = useState<SortKey>('visitCount')
@@ -245,6 +245,12 @@ export default function FootprintMapPage() {
               ))}
             </div>
           </div>
+
+          {sortedCities.length === 0 && (
+            <p className="py-16 text-center text-sm text-[color:var(--muted-foreground)]">
+              {isOwner ? '还没有到访记录。' : '作者没有公开任何城市足迹哦～'}
+            </p>
+          )}
 
           <div className="border-t border-[color:var(--border)]">
             {sortedCities.map(city => (

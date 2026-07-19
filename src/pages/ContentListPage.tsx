@@ -6,16 +6,16 @@ import ContentCard from '../components/ContentCard'
 import VisibilityBadge from '../components/VisibilityBadge'
 import { allContent, addContentItem, makeUniqueSlug } from '../mockData'
 import type { ContentItem, ThoughtType, Visibility } from '../types'
-import { isOwnerOf } from '../auth'
+import { useIsOwnerOf } from '../auth'
 
 type ContentSection = 'thoughts' | 'diary' | 'pkm'
 type PkmView = 'all' | 'notes' | 'articles' | 'drafts' | 'folders' | 'tags' | 'series'
 type ThoughtFilter = 'all' | ThoughtType
 
-const sectionConfig: Record<ContentSection, { label: string; empty: string }> = {
-  thoughts: { label: '随想', empty: '暂无随想' },
-  diary: { label: '日记', empty: '暂无日记' },
-  pkm: { label: '笔记与文章', empty: '暂无笔记与文章' },
+const sectionConfig: Record<ContentSection, { label: string }> = {
+  thoughts: { label: '随想' },
+  diary: { label: '日记' },
+  pkm: { label: '笔记与文章' },
 }
 
 const pkmViews: { key: PkmView; label: string }[] = [
@@ -48,10 +48,14 @@ function uniqueValues(values: (string | undefined)[]) {
   return Array.from(new Set(values.filter(Boolean) as string[]))
 }
 
-export default function ContentListPage() {
-  const { username, section } = useParams<{ username: string; section: string }>()
-  const sec = (section as ContentSection) || 'pkm'
-  const config = sectionConfig[sec] ?? sectionConfig.pkm
+interface ContentListPageProps {
+  section: ContentSection
+}
+
+export default function ContentListPage({ section }: ContentListPageProps) {
+  const { username } = useParams<{ username: string }>()
+  const sec = section
+  const config = sectionConfig[sec]
 
   const [filterVisibility, setFilterVisibility] = useState<Visibility | 'all'>('all')
   const [filterTag, setFilterTag] = useState('')
@@ -64,7 +68,7 @@ export default function ContentListPage() {
   const [quickSourceAuthor, setQuickSourceAuthor] = useState('')
   const [createdTick, setCreatedTick] = useState(0)
 
-  const isOwner = isOwnerOf(username)
+  const isOwner = useIsOwnerOf(username)
 
   let items = allContent.filter(c => {
     if (!matchesSection(c, sec)) return false
@@ -102,6 +106,13 @@ export default function ContentListPage() {
     () => Array.from(new Set(allContent.flatMap(c => c.tags.map(t => t.name)))).sort(),
     [createdTick]
   )
+
+  const hasFilters =
+    filterVisibility !== 'all' ||
+    filterTag !== '' ||
+    filterKeyword !== '' ||
+    (sec === 'pkm' && pkmView !== 'all') ||
+    (sec === 'thoughts' && thoughtFilter !== 'all')
 
   const folders = useMemo(() => uniqueValues(items.map(item => item.folder)), [items])
   const series = useMemo(() => uniqueValues(items.map(item => item.series)), [items])
@@ -362,7 +373,13 @@ export default function ContentListPage() {
 
         {items.length === 0 ? (
           <div className="py-16 text-center">
-            <p className="text-sm text-[color:var(--muted-foreground)]">{config.empty}</p>
+            <p className="text-sm text-[color:var(--muted-foreground)]">
+              {hasFilters
+                ? `没有符合条件的${config.label}`
+                : isOwner
+                  ? `还没有${config.label}`
+                  : `作者没有公开任何${config.label}哦～`}
+            </p>
           </div>
         ) : (
           <div className="border-t border-[color:var(--border)]">

@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import VisibilityBadge from '../components/VisibilityBadge'
 import MediaInsertMenu from '../components/MediaInsertMenu'
 import MarkdownRenderer from '../components/MarkdownRenderer'
-import { getCurrentUser } from '../auth'
+import { useCurrentUser } from '../auth'
 import { addContentItem, addTrajectoryEntry, recordFootprintVisit, makeUniqueSlug } from '../mockData'
 import { slugify } from '../lib/slug'
 import type { ContentItem, ContentKind, ContentType, ThoughtType, ThoughtSourceType, Visibility } from '../types'
@@ -32,7 +32,7 @@ const sourceTypeOptions: { value: ThoughtSourceType; label: string }[] = [
 export default function ContentCreatePage() {
   const { type } = useParams<{ type: string }>()
   const navigate = useNavigate()
-  const currentUser = getCurrentUser()
+  const currentUser = useCurrentUser()
 
   const createType = (type as CreateType) in typeConfig ? (type as CreateType) : 'note'
   const config = typeConfig[createType]

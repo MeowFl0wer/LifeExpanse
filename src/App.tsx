@@ -17,15 +17,18 @@ import ContentCreatePage from './pages/ContentCreatePage'
 import SearchPage from './pages/SearchPage'
 import AccountPage from './pages/AccountPage'
 import AdminPage from './pages/AdminPage'
-import { isLoggedIn, isAdmin } from './auth'
+import AboutPage from './pages/AboutPage'
+import { useIsLoggedIn, useIsAdmin } from './auth'
 
 function RequireAuth({ children }: { children: ReactElement }) {
-  return isLoggedIn() ? children : <Navigate to="/login" replace />
+  return useIsLoggedIn() ? children : <Navigate to="/login" replace />
 }
 
 function RequireAdmin({ children }: { children: ReactElement }) {
-  if (!isLoggedIn()) return <Navigate to="/login" replace />
-  return isAdmin() ? children : <Navigate to="/app" replace />
+  const loggedIn = useIsLoggedIn()
+  const admin = useIsAdmin()
+  if (!loggedIn) return <Navigate to="/login" replace />
+  return admin ? children : <Navigate to="/app" replace />
 }
 
 export default function App() {
@@ -46,25 +49,26 @@ export default function App() {
         {/* Create mode (Ch 7.2) */}
         <Route path="/new/:type" element={<RequireAuth><ContentCreatePage /></RequireAuth>} />
 
-        {/* Search, account, admin */}
+        {/* Search, about, account, admin */}
         <Route path="/search" element={<SearchPage />} />
+        <Route path="/about" element={<AboutPage />} />
         <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
         <Route path="/admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
 
         {/* Content list pages */}
-        <Route path="/:username/diary" element={<ContentListPage />} />
-        <Route path="/:username/pkm" element={<ContentListPage />} />
-        <Route path="/:username/thoughts" element={<ContentListPage />} />
+        <Route path="/:username/diary" element={<ContentListPage section="diary" />} />
+        <Route path="/:username/pkm" element={<ContentListPage section="pkm" />} />
+        <Route path="/:username/thoughts" element={<ContentListPage section="thoughts" />} />
 
         {/* Content detail (read-only) */}
-        <Route path="/:username/diary/:slug" element={<ContentDetailPage />} />
-        <Route path="/:username/pkm/:slug" element={<ContentDetailPage />} />
-        <Route path="/:username/thoughts/:slug" element={<ContentDetailPage />} />
+        <Route path="/:username/diary/:slug" element={<ContentDetailPage section="diary" />} />
+        <Route path="/:username/pkm/:slug" element={<ContentDetailPage section="pkm" />} />
+        <Route path="/:username/thoughts/:slug" element={<ContentDetailPage section="thoughts" />} />
 
         {/* Content edit (owner only) */}
-        <Route path="/:username/diary/:slug/edit" element={<ContentEditPage />} />
-        <Route path="/:username/pkm/:slug/edit" element={<ContentEditPage />} />
-        <Route path="/:username/thoughts/:slug/edit" element={<ContentEditPage />} />
+        <Route path="/:username/diary/:slug/edit" element={<ContentEditPage section="diary" />} />
+        <Route path="/:username/pkm/:slug/edit" element={<ContentEditPage section="pkm" />} />
+        <Route path="/:username/thoughts/:slug/edit" element={<ContentEditPage section="thoughts" />} />
 
         {/* Life trajectory, footprint map, flight log */}
         <Route path="/:username/trajectory" element={<TrajectoryPage />} />

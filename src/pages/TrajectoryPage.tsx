@@ -6,7 +6,7 @@ import TagList from '../components/TagList'
 import BatchTrajectoryForm from '../components/BatchTrajectoryForm'
 import { trajectoryEntries, generateHeatmapData, addTrajectoryEntry, recordFootprintVisit } from '../mockData'
 import type { TrajectoryEntry } from '../types'
-import { isOwnerOf } from '../auth'
+import { useIsOwnerOf } from '../auth'
 
 const heatmapData = generateHeatmapData()
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六']
@@ -64,7 +64,7 @@ function formatMonthLabel(dateStr: string): string {
 
 export default function TrajectoryPage() {
   const { username } = useParams<{ username: string }>()
-  const isOwner = isOwnerOf(username)
+  const isOwner = useIsOwnerOf(username)
 
   const [viewMode, setViewMode] = useState<'timeline' | 'calendar'>('timeline')
   const [cursor, setCursor] = useState(() => {
@@ -351,7 +351,13 @@ export default function TrajectoryPage() {
         ) : (
           <section className="space-y-10">
             {groupedByMonth.length === 0 ? (
-              <p className="py-16 text-center text-sm text-[color:var(--muted-foreground)]">没有符合筛选条件的记录。</p>
+              <p className="py-16 text-center text-sm text-[color:var(--muted-foreground)]">
+                {filterCity || filterTag
+                  ? '没有符合筛选条件的记录。'
+                  : isOwner
+                    ? '还没有人生轨迹记录。'
+                    : '作者没有公开任何人生轨迹哦～'}
+              </p>
             ) : (
               groupedByMonth.map(group => (
                 <div key={group.label}>

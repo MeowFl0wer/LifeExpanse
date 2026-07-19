@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import Logo from './Logo'
+import { useCurrentUser, clearCurrentUser } from '../auth'
 
 const navLinks = [
   { label: '主页', to: '/euan' },
@@ -11,11 +12,20 @@ const navLinks = [
   { label: '足迹地图', to: '/euan/map' },
   { label: '飞行轨迹', to: '/euan/flights' },
   { label: '独立空间', to: '/euan/space' },
+  { label: '关于', to: '/about' },
 ]
 
 export default function PublicHeader() {
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
+  const navigate = useNavigate()
+  const currentUser = useCurrentUser()
+
+  function handleLogout() {
+    clearCurrentUser()
+    setMenuOpen(false)
+    navigate('/')
+  }
 
   return (
     <header
@@ -45,12 +55,20 @@ export default function PublicHeader() {
                 </Link>
               )
             })}
-            <Link
-              to="/login"
-              className="life-button ml-2 text-sm"
-            >
-              登录
-            </Link>
+            {currentUser ? (
+              <div className="ml-2 flex items-center gap-2">
+                <Link to="/app" className="life-button text-sm">
+                  工作台
+                </Link>
+                <button type="button" onClick={handleLogout} className="life-button text-sm">
+                  登出
+                </button>
+              </div>
+            ) : (
+              <Link to="/login" className="life-button ml-2 text-sm">
+                登录
+              </Link>
+            )}
           </nav>
 
           {/* Mobile menu button */}
@@ -93,13 +111,32 @@ export default function PublicHeader() {
                 {link.label}
               </Link>
             ))}
-            <Link
-              to="/login"
-              className="block mt-2 px-2 py-2.5 text-sm text-[color:var(--primary)] font-medium"
-              onClick={() => setMenuOpen(false)}
-            >
-              登录 →
-            </Link>
+            {currentUser ? (
+              <>
+                <Link
+                  to="/app"
+                  className="mt-2 block px-2 py-2.5 text-sm font-medium text-[color:var(--primary)] no-underline"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  进入工作台 →
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="block w-full px-2 py-2.5 text-left text-sm text-[color:var(--muted-foreground)]"
+                >
+                  登出 @{currentUser}
+                </button>
+              </>
+            ) : (
+              <Link
+                to="/login"
+                className="mt-2 block px-2 py-2.5 text-sm font-medium text-[color:var(--primary)]"
+                onClick={() => setMenuOpen(false)}
+              >
+                登录 →
+              </Link>
+            )}
           </nav>
         )}
       </div>

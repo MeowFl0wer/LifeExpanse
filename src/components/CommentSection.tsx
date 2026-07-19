@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getComments, addComment } from '../mockData'
-import { getCurrentUser } from '../auth'
+import { useCurrentUser } from '../auth'
 import type { ArticleComment } from '../types'
 
 interface CommentSectionProps {
@@ -18,7 +18,7 @@ function formatDateTime(dateStr: string): string {
 }
 
 export default function CommentSection({ contentId, contentAuthor, allowComments }: CommentSectionProps) {
-  const currentUser = getCurrentUser()
+  const currentUser = useCurrentUser()
   const [body, setBody] = useState('')
   // Comments live in a module-level mock store, so a local counter is what
   // re-reads them after posting. The value itself is never needed.

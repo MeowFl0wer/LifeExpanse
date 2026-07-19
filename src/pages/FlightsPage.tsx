@@ -6,7 +6,7 @@ import WorldMap from '../components/WorldMap'
 import FlightCsvImport from '../components/FlightCsvImport'
 import { flightRecords, airports } from '../mockData'
 import type { FlightRecord, FlightStatus } from '../types'
-import { isOwnerOf } from '../auth'
+import { useIsOwnerOf } from '../auth'
 
 const statusConfig: Record<FlightStatus, { label: string; cls: string }> = {
   normal: { label: '正常', cls: 'bg-[#EEF8F0] text-[#3F744D] border-[#D5EBD9]' },
@@ -56,7 +56,7 @@ const emptyFlight = {
 
 export default function FlightsPage() {
   const { username } = useParams<{ username: string }>()
-  const isOwner = isOwnerOf(username)
+  const isOwner = useIsOwnerOf(username)
 
   const [records, setRecords] = useState<FlightRecord[]>(flightRecords)
   const [yearFilter, setYearFilter] = useState('all')
@@ -306,7 +306,13 @@ export default function FlightsPage() {
           </div>
 
           {filtered.length === 0 ? (
-            <p className="py-16 text-center text-sm text-[color:var(--muted-foreground)]">没有符合筛选条件的飞行记录。</p>
+            <p className="py-16 text-center text-sm text-[color:var(--muted-foreground)]">
+              {yearFilter !== 'all' || airlineFilter !== 'all'
+                ? '没有符合筛选条件的飞行记录。'
+                : isOwner
+                  ? '还没有飞行记录。'
+                  : '作者没有公开任何飞行记录哦～'}
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <div className="min-w-[640px] border-t border-[color:var(--border)]">

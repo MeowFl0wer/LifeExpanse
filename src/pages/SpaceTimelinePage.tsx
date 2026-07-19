@@ -2,7 +2,7 @@ import { Link, Navigate, useParams, useNavigate } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import { getSpaceByKey, getSpacePosts } from '../mockData'
-import { isOwnerOf, hasSpaceSession, revokeSpaceSession } from '../auth'
+import { useIsOwnerOf, hasSpaceSession, revokeSpaceSession } from '../auth'
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -12,7 +12,7 @@ export default function SpaceTimelinePage() {
   const { username, spaceKey } = useParams<{ username: string; spaceKey: string }>()
   const navigate = useNavigate()
   const space = getSpaceByKey(spaceKey ?? '')
-  const isOwner = isOwnerOf(username)
+  const isOwner = useIsOwnerOf(username)
 
   // A URL alone must never grant access: the session is re-checked against
   // this space's id, and an owner is only an owner of their own space.
