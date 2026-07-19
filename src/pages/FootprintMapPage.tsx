@@ -4,7 +4,7 @@ import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import WorldMap from '../components/WorldMap'
 import PrivateModuleGate from '../components/PrivateModuleGate'
-import { footprintCities, addTrajectoryEntry, recordFootprintVisit } from '../mockData'
+import { footprintCities, addTrajectoryEntry, recordFootprintVisit, nextId } from '../mockData'
 import type { FootprintCity } from '../types'
 import { useIsOwnerOf } from '../auth'
 
@@ -83,12 +83,12 @@ export default function FootprintMapPage() {
 
     if (form.linkToTrajectory) {
       addTrajectoryEntry({
-        id: `tr-${Date.now()}`,
+        id: nextId('tr'),
         date: form.arrival,
         city,
         country,
         summary: form.note.trim() || `到访 ${city}`,
-        tags: [{ id: `tt-fp-${Date.now()}`, name: '足迹' }],
+        tags: [{ id: nextId('tt'), name: '足迹' }],
       })
     }
 

@@ -5,8 +5,7 @@ import MediaInsertMenu from '../components/MediaInsertMenu'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import {
   getContentBySlug, updateContentItem,
-  folders as allFolders, series as allSeries, addFolder, addSeries,
-} from '../mockData'
+  folders as allFolders, series as allSeries, addFolder, addSeries, nextId } from '../mockData'
 import { extractHashTags, normaliseMembership } from '../lib/library'
 import LibraryPicker from '../components/LibraryPicker'
 import type { ContentKind, ThoughtType, Visibility } from '../types'
@@ -31,6 +30,13 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
   const [contentKind, setContentKind] = useState<ContentKind>(item?.contentKind ?? 'note')
   const [thoughtType, setThoughtType] = useState<ThoughtType>(item?.thoughtType ?? 'original')
   const [allowComments, setAllowComments] = useState(item?.allowComments ?? false)
+  const [summary, setSummary] = useState(item?.summary ?? '')
+  const [cover, setCover] = useState(item?.cover ?? '')
+  const [category, setCategory] = useState(item?.category ?? '')
+  const [seoTitle, setSeoTitle] = useState(item?.seoTitle ?? '')
+  const [seoDescription, setSeoDescription] = useState(item?.seoDescription ?? '')
+  const [favorite, setFavorite] = useState(item?.favorite ?? false)
+  const [archived, setArchived] = useState(item?.archived ?? false)
   const [folderIds, setFolderIds] = useState<string[]>(item?.folderIds ?? [])
   const [seriesIds, setSeriesIds] = useState<string[]>(item?.seriesIds ?? [])
   const [, bumpLibrary] = useState(0)
@@ -47,6 +53,13 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
     contentKind !== (item?.contentKind ?? 'note') ||
     thoughtType !== (item?.thoughtType ?? 'original') ||
     allowComments !== (item?.allowComments ?? false) ||
+    summary !== (item?.summary ?? '') ||
+    cover !== (item?.cover ?? '') ||
+    category !== (item?.category ?? '') ||
+    seoTitle !== (item?.seoTitle ?? '') ||
+    seoDescription !== (item?.seoDescription ?? '') ||
+    favorite !== (item?.favorite ?? false) ||
+    archived !== (item?.archived ?? false) ||
     folderIds.join() !== (item?.folderIds ?? []).join() ||
     seriesIds.join() !== (item?.seriesIds ?? []).join()
 
@@ -99,7 +112,14 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
       body,
       visibility,
       allowComments,
-      tags: tagNames.map((name, i) => ({ id: `tag-${Date.now()}-${i}`, name })),
+      summary: summary.trim(),
+      cover: cover.trim() || undefined,
+      category: category.trim() || undefined,
+      seoTitle: seoTitle.trim() || undefined,
+      seoDescription: seoDescription.trim() || undefined,
+      favorite,
+      archived,
+      tags: tagNames.map(name => ({ id: nextId('tag'), name })),
       ...(item!.type === 'pkm'
         ? { contentKind, ...normaliseMembership({ folderIds, seriesIds }, allFolders) }
         : {}),
@@ -320,7 +340,98 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
           </div>
 
           {item.type === 'pkm' && (
-            <div className="border-b border-[color:var(--border)] pb-4">
+            <div className="space-y-4 border-b border-[color:var(--border)] pb-4">
+              <div>
+                <label htmlFor="edit-summary" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                  摘要
+                </label>
+                <textarea
+                  id="edit-summary"
+                  value={summary}
+                  onChange={e => setSummary(e.target.value)}
+                  rows={2}
+                  placeholder="列表和分享卡片上显示的简介；留空会截取正文开头"
+                  className="life-input w-full px-3 py-2 text-sm leading-6"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 text-xs text-[color:var(--foreground)]">
+                  <input
+                    type="checkbox"
+                    checked={favorite}
+                    onChange={e => setFavorite(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-[color:var(--primary)]"
+                  />
+                  收藏
+                </label>
+                <label className="flex items-center gap-2 text-xs text-[color:var(--foreground)]">
+                  <input
+                    type="checkbox"
+                    checked={archived}
+                    onChange={e => setArchived(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-[color:var(--primary)]"
+                  />
+                  归档（不再出现在默认列表中）
+                </label>
+              </div>
+
+              {contentKind === 'article' && (
+                <div className="grid gap-3 rounded-[var(--radius)] bg-[color:var(--secondary)] p-4 sm:grid-cols-2">
+                  <p className="text-xs font-medium text-[color:var(--foreground)] sm:col-span-2">
+                    文章专有设置
+                  </p>
+                  <div>
+                    <label htmlFor="edit-category" className="mb-1.5 block text-xs text-[color:var(--muted-foreground)]">
+                      分类
+                    </label>
+                    <input
+                      id="edit-category"
+                      value={category}
+                      onChange={e => setCategory(e.target.value)}
+                      placeholder="例如：产品与工程"
+                      className="life-input w-full px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="edit-cover" className="mb-1.5 block text-xs text-[color:var(--muted-foreground)]">
+                      封面图地址
+                    </label>
+                    <input
+                      id="edit-cover"
+                      value={cover}
+                      onChange={e => setCover(e.target.value)}
+                      placeholder="/brand/cover.png"
+                      className="life-input w-full px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="edit-seo-title" className="mb-1.5 block text-xs text-[color:var(--muted-foreground)]">
+                      SEO 标题
+                    </label>
+                    <input
+                      id="edit-seo-title"
+                      value={seoTitle}
+                      onChange={e => setSeoTitle(e.target.value)}
+                      placeholder="留空则使用文章标题"
+                      className="life-input w-full px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="edit-seo-desc" className="mb-1.5 block text-xs text-[color:var(--muted-foreground)]">
+                      SEO 描述
+                    </label>
+                    <input
+                      id="edit-seo-desc"
+                      value={seoDescription}
+                      onChange={e => setSeoDescription(e.target.value)}
+                      placeholder="留空则使用摘要"
+                      className="life-input w-full px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+
               <LibraryPicker
                 folders={allFolders.filter(f => f.owner === item.author)}
                 series={allSeries.filter(s => s.owner === item.author)}

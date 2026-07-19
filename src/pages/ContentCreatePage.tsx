@@ -6,8 +6,7 @@ import MarkdownRenderer from '../components/MarkdownRenderer'
 import { useCurrentUser } from '../auth'
 import {
   addContentItem, addTrajectoryEntry, recordFootprintVisit, makeUniqueSlug,
-  folders as allFolders, series as allSeries, addFolder, addSeries,
-} from '../mockData'
+  folders as allFolders, series as allSeries, addFolder, addSeries, nextId } from '../mockData'
 import { slugify } from '../lib/slug'
 import { extractHashTags, normaliseMembership } from '../lib/library'
 import LibraryPicker from '../components/LibraryPicker'
@@ -72,14 +71,14 @@ export default function ContentCreatePage() {
   const [, bumpLibrary] = useState(0)
 
   function createFolder(name: string): string {
-    const id = `fd-${Date.now()}`
+    const id = nextId('fd')
     addFolder({ id, owner: currentUser ?? 'euan', name, createdAt: new Date().toISOString() })
     bumpLibrary(n => n + 1)
     return id
   }
 
   function createSeries(name: string): string {
-    const id = `sr-${Date.now()}`
+    const id = nextId('sr')
     addSeries({ id, owner: currentUser ?? 'euan', name, createdAt: new Date().toISOString() })
     bumpLibrary(n => n + 1)
     return id
@@ -186,11 +185,11 @@ export default function ContentCreatePage() {
         ...extractHashTags(body),
       ])
     )
-    const tags = tagNames.map((name, i) => ({ id: `tag-${Date.now()}-${i}`, name }))
+    const tags = tagNames.map(name => ({ id: nextId('tag'), name }))
 
     if (createType === 'trajectory') {
       addTrajectoryEntry({
-        id: `tr-${Date.now()}`,
+        id: nextId('tr'),
         date: trajDate,
         city: trajCity.trim(),
         country: trajCountry.trim() || '—',
@@ -219,7 +218,7 @@ export default function ContentCreatePage() {
     const type: ContentType = createType === 'thought' ? 'thought' : createType === 'diary' ? 'diary' : 'pkm'
     const slug = makeUniqueSlug(slugify(title || body.slice(0, 30), `entry-${Date.now()}`))
     const item: ContentItem = {
-      id: `c-${Date.now()}`,
+      id: nextId('c'),
       slug,
       type,
       title: title.trim() || body.trim().slice(0, 30),

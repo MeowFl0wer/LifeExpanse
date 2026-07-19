@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getComments, addComment } from '../mockData'
+import { getComments, addComment, nextId } from '../mockData'
 import { useCurrentUser } from '../auth'
 import type { ArticleComment } from '../types'
 
@@ -36,7 +36,7 @@ export default function CommentSection({ contentId, contentAuthor, allowComments
       return
     }
     const comment: ArticleComment = {
-      id: `cm-${Date.now()}`,
+      id: nextId('cm'),
       contentId,
       author: currentUser,
       authorDisplayName: currentUser === 'euan' ? 'Euan' : currentUser,

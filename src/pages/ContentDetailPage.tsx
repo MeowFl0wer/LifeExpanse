@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
@@ -6,6 +6,8 @@ import TagList from '../components/TagList'
 import VisibilityBadge from '../components/VisibilityBadge'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import CommentSection from '../components/CommentSection'
+import ArticleToc from '../components/ArticleToc'
+import { publishAsArticle, revertToNote, getLinkGraph, type LinkGraph } from '../api/pkm'
 import { getContentBySlug, deleteContentItem, folders as allFolders, series as allSeries } from '../mockData'
 import { locationTrail } from '../lib/library'
 import { useCurrentUser } from '../auth'
@@ -58,6 +60,18 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
   const item = getContentBySlug(slug ?? '')
   const [localContentKind, setLocalContentKind] = useState(item?.contentKind)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [links, setLinks] = useState<LinkGraph | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  // Link graph comes from the data layer so it honours the viewer's permissions.
+  useEffect(() => {
+    let cancelled = false
+    if (!item || item.type !== 'pkm') { setLinks(null); return }
+    getLinkGraph(item, currentUser)
+      .then(graph => { if (!cancelled) setLinks(graph) })
+      .catch(() => { if (!cancelled) setLinks(null) })
+    return () => { cancelled = true }
+  }, [item?.id, item?.body, currentUser])
 
   const isOwner = item !== undefined && currentUser === item.author
 
@@ -84,13 +98,36 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
 
   const contentKind = localContentKind ?? item.contentKind
   const trail = locationTrail(item, allFolders, allSeries)
+  // 需求 10.3: articles read as a document with a floating outline.
+  const showToc = item.type === 'pkm' && contentKind === 'article'
   const typeLabel: Record<string, string> = { diary: '日记', pkm: '笔记与文章', thought: '随想' }
   const thoughtTypeLabel = item.thoughtType === 'excerpt' ? '摘录' : '原创'
 
-  function handlePublishAsArticle() {
-    alert('前端原型：这会把当前笔记发布为文章。\n\n正文、内容 ID、版本历史和内部链接都会保留，只补充文章摘要、封面、分类、系列、SEO 和评论设置。')
-    setLocalContentKind('article')
+  async function handlePublishAsArticle() {
+    setBusy(true)
+    try {
+      const updated = await publishAsArticle(item!.id)
+      setLocalContentKind(updated.contentKind)
+    } catch {
+      alert('发布失败，请重试。')
+    } finally {
+      setBusy(false)
+    }
   }
+
+  async function handleReturnToNote() {
+    if (!window.confirm('退回笔记状态后，公开链接和评论可能受到影响。确定继续吗？')) return
+    setBusy(true)
+    try {
+      const updated = await revertToNote(item!.id)
+      setLocalContentKind(updated.contentKind)
+    } catch {
+      alert('操作失败，请重试。')
+    } finally {
+      setBusy(false)
+    }
+  }
+
 
   function handleDelete() {
     // Second step: an explicit OS-level confirm on top of the inline one, since
@@ -107,17 +144,15 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
     navigate(`/${username}/${section}`, { replace: true })
   }
 
-  function handleReturnToNote() {
-    const confirmed = window.confirm('退回笔记状态后，公开链接和评论可能受到影响。确定继续吗？')
-    if (!confirmed) return
-    setLocalContentKind('note')
-  }
-
   return (
     <div className="life-page flex min-h-screen flex-col">
       <PublicHeader />
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
+      <main
+        className={`mx-auto w-full flex-1 px-6 py-10 ${
+          showToc ? 'max-w-6xl' : 'max-w-3xl'
+        }`}
+      >
         {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-xs text-[color:var(--muted-foreground)] mb-8" aria-label="面包屑">
           <Link to={`/${username}`} className="hover:text-[color:var(--foreground)] transition-colors">
@@ -179,13 +214,13 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
             {isOwner && (
               <div className="flex flex-wrap items-center gap-2">
                 {item.type === 'pkm' && contentKind === 'note' && (
-                  <button type="button" onClick={handlePublishAsArticle} className="life-button text-xs">
-                    发布为文章
+                  <button type="button" onClick={handlePublishAsArticle} disabled={busy} className="life-button text-xs disabled:opacity-50">
+                    {busy ? '处理中…' : '发布为文章'}
                   </button>
                 )}
                 {item.type === 'pkm' && contentKind === 'article' && (
-                  <button type="button" onClick={handleReturnToNote} className="life-button text-xs">
-                    退回笔记
+                  <button type="button" onClick={handleReturnToNote} disabled={busy} className="life-button text-xs disabled:opacity-50">
+                    {busy ? '处理中…' : '退回笔记'}
                   </button>
                 )}
                 <button
@@ -264,9 +299,22 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
           )}
         </header>
 
+        <div className={showToc ? 'gap-10 lg:grid lg:grid-cols-[minmax(0,1fr)_15rem]' : ''}>
         {/* Article body — strictly read-only */}
         <article>
-          <MarkdownRenderer content={item.body} className="mb-8" />
+          <MarkdownRenderer
+            content={item.body}
+            className="mb-8"
+            resolveLink={target => {
+              const found = links?.outgoing.find(
+                i => i.slug.toLowerCase() === target.toLowerCase()
+                  || i.title.toLowerCase() === target.toLowerCase()
+              )
+              return found
+                ? { href: `/${username}/pkm/${found.slug}`, label: found.title }
+                : { label: target }
+            }}
+          />
 
           {/* Demo: video embed for demo-note */}
           {slug === 'demo-note' && (
@@ -313,7 +361,55 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
               />
             </div>
           )}
+
+        {links && (links.backlinks.length > 0 || links.unresolved.length > 0) && (
+          <section className="mt-12 border-t border-[color:var(--border)] pt-6">
+            {links.backlinks.length > 0 && (
+              <>
+                <h2 className="text-sm font-medium text-[color:var(--foreground)]">
+                  链接到这里的笔记
+                  <span className="ml-2 text-xs font-normal text-[color:var(--muted-foreground)]">
+                    {links.backlinks.length}
+                  </span>
+                </h2>
+                <ul className="mt-3 space-y-2">
+                  {links.backlinks.map(b => (
+                    <li key={b.id}>
+                      <Link
+                        to={`/${username}/pkm/${b.slug}`}
+                        className="text-sm text-[color:var(--primary)] hover:underline"
+                      >
+                        {b.title}
+                      </Link>
+                      {b.summary && (
+                        <p className="mt-0.5 line-clamp-1 text-xs text-[color:var(--muted-foreground)]">
+                          {b.summary}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {isOwner && links.unresolved.length > 0 && (
+              <p className="mt-4 text-xs leading-6 text-[color:var(--muted-foreground)]">
+                正文里有 {links.unresolved.length} 个还没有对应笔记的链接：
+                {links.unresolved.map(t => `[[${t}]]`).join('、')}
+              </p>
+            )}
+          </section>
+        )}
         </article>
+
+        {showToc && (
+          <aside className="hidden lg:block">
+            <div className="sticky top-24">
+              <ArticleToc body={item.body} />
+            </div>
+          </aside>
+        )}
+        </div>
 
         {/* Ch 11: comments belong to the article form of PKM content only. */}
         {item.type === 'pkm' && contentKind === 'article' && (

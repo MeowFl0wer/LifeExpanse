@@ -1,6 +1,20 @@
+import { headingId } from '../lib/toc'
+import { parseWikiLinks } from '../lib/wikilink'
+
+export interface WikiLinkTarget {
+  /** Where the link should go, or undefined when nothing matches yet. */
+  href?: string
+  label: string
+}
+
 interface MarkdownRendererProps {
   content: string
   className?: string
+  /**
+   * Resolves `[[targets]]` to internal links. Without it, wiki links render as
+   * plain text so the renderer stays usable outside the notes module.
+   */
+  resolveLink?: (target: string) => WikiLinkTarget | undefined
 }
 
 function escapeHtml(str: string): string {
@@ -12,8 +26,26 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;')
 }
 
-function parseMarkdown(md: string): string {
+function parseMarkdown(
+  md: string,
+  resolveLink?: (target: string) => WikiLinkTarget | undefined
+): string {
   let html = md
+
+  // Wiki links run before other inline rules so their contents are not
+  // mangled by emphasis or link parsing.
+  if (resolveLink) {
+    for (const link of parseWikiLinks(md)) {
+      const resolved = resolveLink(link.target)
+      // `[[slug]]` shows the target note's title; an explicit `[[x|别名]]` wins.
+      const hasAlias = link.display !== link.target
+      const label = escapeHtml(hasAlias ? link.display : resolved?.label ?? link.display)
+      const replacement = resolved?.href
+        ? `<a class="wikilink" href="${escapeHtml(resolved.href)}">${label}</a>`
+        : `<span class="wikilink wikilink-missing" title="尚未创建">${label}</span>`
+      html = html.split(link.raw).join(replacement)
+    }
+  }
 
   // Code blocks (must come before inline code)
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
@@ -24,11 +56,18 @@ function parseMarkdown(md: string): string {
   // Inline code
   html = html.replace(/`([^`]+)`/g, (_m, code) => `<code>${escapeHtml(code)}</code>`)
 
-  // Headings
-  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>')
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
-  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>')
+  // Headings, with anchors so the table of contents can scroll to them.
+  const usedIds = new Map<string, number>()
+  function anchorFor(text: string): string {
+    const base = headingId(text.replace(/<[^>]+>/g, ''))
+    const seen = usedIds.get(base) ?? 0
+    usedIds.set(base, seen + 1)
+    return seen === 0 ? base : `${base}-${seen + 1}`
+  }
+  html = html.replace(/^(#{1,4}) (.+)$/gm, (_m, hashes: string, text: string) => {
+    const level = hashes.length
+    return `<h${level} id="${anchorFor(text)}">${text}</h${level}>`
+  })
 
   // Blockquotes
   html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
@@ -65,7 +104,7 @@ function parseMarkdown(md: string): string {
   for (const line of lines) {
     const trimmed = line.trim()
     if (!trimmed) continue
-    if (/^<(h[1-6]|p|ul|ol|li|blockquote|pre|hr|img)/.test(trimmed)) {
+    if (/^<(h[1-6]|p|ul|ol|li|blockquote|pre|hr|img|div)/.test(trimmed)) {
       result.push(trimmed)
     } else {
       result.push(`<p>${trimmed}</p>`)
@@ -75,8 +114,8 @@ function parseMarkdown(md: string): string {
   return result.join('\n')
 }
 
-export default function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
-  const html = parseMarkdown(content)
+export default function MarkdownRenderer({ content, className = '', resolveLink }: MarkdownRendererProps) {
+  const html = parseMarkdown(content, resolveLink)
 
   return (
     <div

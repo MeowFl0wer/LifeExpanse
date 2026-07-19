@@ -405,6 +405,16 @@ export function updateContentItem(id: string, patch: Partial<ContentItem>): void
   if (target) Object.assign(target, patch)
 }
 
+export function deleteFolder(id: string): void {
+  const index = folders.findIndex(f => f.id === id)
+  if (index >= 0) folders.splice(index, 1)
+}
+
+export function deleteSeries(id: string): void {
+  const index = series.findIndex(s => s.id === id)
+  if (index >= 0) series.splice(index, 1)
+}
+
 export function getFolder(id: string | undefined): Folder | undefined {
   return id ? folders.find(f => f.id === id) : undefined
 }
@@ -554,6 +564,16 @@ export function recordFootprintVisit(
 }
 
 /** Appends a newly created item so it shows up in lists, search and detail pages. */
+/**
+ * Unique id. `Date.now()` alone collides when two items are created in the
+ * same millisecond, which then makes lookups by id return the wrong one.
+ */
+let idCounter = 0
+export function nextId(prefix: string): string {
+  idCounter += 1
+  return `${prefix}-${Date.now().toString(36)}-${idCounter.toString(36)}`
+}
+
 export function addContentItem(item: ContentItem): void {
   allContent.push(item)
 }

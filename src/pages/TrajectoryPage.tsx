@@ -5,7 +5,7 @@ import Footer from '../components/Footer'
 import TagList from '../components/TagList'
 import BatchTrajectoryForm from '../components/BatchTrajectoryForm'
 import PrivateModuleGate from '../components/PrivateModuleGate'
-import { trajectoryEntries, generateHeatmapData, addTrajectoryEntry, recordFootprintVisit } from '../mockData'
+import { trajectoryEntries, generateHeatmapData, addTrajectoryEntry, recordFootprintVisit, nextId } from '../mockData'
 import type { TrajectoryEntry } from '../types'
 import { useIsOwnerOf } from '../auth'
 
@@ -164,7 +164,7 @@ export default function TrajectoryPage() {
         city: data.city,
         country: data.country || '—',
         summary: data.summary || `在 ${data.city}`,
-        tags: [{ id: `tt-${batchId}`, name: '批量记录' }],
+        tags: [{ id: nextId('tt'), name: '批量记录' }],
         batchId,
       })
     }

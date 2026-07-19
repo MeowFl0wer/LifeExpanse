@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import {
   adminUsers, invitationCodes, securityLogs, registrationMode as defaultMode,
-  backupJobs, siteStats, SPACE_LIMIT,
-} from '../mockData'
+  backupJobs, siteStats, SPACE_LIMIT, nextId } from '../mockData'
 import type { RegistrationMode } from '../types'
 
 type Tab = 'overview' | 'users' | 'invites' | 'backup' | 'logs'
@@ -63,7 +62,7 @@ export default function AdminPage() {
     const seg = () => Math.random().toString(36).slice(2, 6).toUpperCase()
     setCodes(prev => [
       {
-        id: `ic-${Date.now()}`,
+        id: nextId('ic'),
         code: `LIFE-${seg()}-${seg()}`,
         createdAt: new Date().toISOString().slice(0, 10),
         expiresAt: new Date(Date.now() + 365 * 86400_000).toISOString().slice(0, 10),

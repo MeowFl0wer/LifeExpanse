@@ -3,7 +3,7 @@ import { Link, Navigate, useParams } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import MarkdownRenderer from '../components/MarkdownRenderer'
-import { getSpaceByKey, getSpacePosts, getSpaceReplies, addSpaceReply } from '../mockData'
+import { getSpaceByKey, getSpacePosts, getSpaceReplies, addSpaceReply, nextId } from '../mockData'
 import { useIsOwnerOf, hasSpaceSession } from '../auth'
 import type { SpaceReply } from '../types'
 
@@ -52,7 +52,7 @@ export default function SpacePostPage() {
     }
 
     const reply: SpaceReply = {
-      id: `spr-${Date.now()}`,
+      id: nextId('spr'),
       spaceId: space!.id,
       postId: post!.id,
       nickname: nickname.trim() || undefined,

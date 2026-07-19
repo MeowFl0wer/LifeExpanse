@@ -318,3 +318,28 @@ textarea {
 .heatmap-cell[data-level="2"] { background: #BFE0B8; }
 .heatmap-cell[data-level="3"] { background: #8EC78C; }
 .heatmap-cell[data-level="4"] { background: #4F8A5F; }
+
+/* Wiki links between notes */
+.prose .wikilink {
+  color: var(--primary);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(79, 138, 95, 0.35);
+  padding-bottom: 1px;
+}
+.prose .wikilink:hover {
+  border-bottom-color: var(--primary);
+}
+/* A link whose note does not exist yet — visibly different from a live one. */
+.prose .wikilink-missing {
+  color: var(--muted-foreground);
+  border-bottom: 1px dashed var(--border);
+  cursor: help;
+}
+
+/* Anchor offset so a TOC jump does not hide the heading under the sticky header */
+.prose h1[id],
+.prose h2[id],
+.prose h3[id],
+.prose h4[id] {
+  scroll-margin-top: 5.5rem;
+}

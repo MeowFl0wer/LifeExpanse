@@ -10,9 +10,10 @@ import { visibilityConfig } from '../components/VisibilityBadge'
 import {
   allContent, addContentItem, makeUniqueSlug,
   folders as allFolders, series as allSeries,
-  addFolder, addSeries, updateFolder,
+  addFolder, addSeries, updateFolder, updateSeries, nextId,
 } from '../mockData'
 import { itemsInFolder, foldersInSeries, looseItemsInSeries, allItemsInSeries } from '../lib/library'
+import { removeFolder, removeSeries } from '../api/pkm'
 import { loginUrlFor } from '../lib/redirect'
 import type { ContentItem, Folder, Series, ThoughtType, Visibility } from '../types'
 import { useIsOwnerOf, useCurrentUser } from '../auth'
@@ -82,6 +83,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
   const [showFolderForm, setShowFolderForm] = useState(false)
   const [showSeriesForm, setShowSeriesForm] = useState(false)
   const [editingFolder, setEditingFolder] = useState(false)
+  const [editingSeries, setEditingSeries] = useState(false)
   // Library and content live in a module-level mock store; this re-reads it.
   const [, bumpStore] = useState(0)
 
@@ -183,7 +185,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     }
     const now = new Date().toISOString()
     addContentItem({
-      id: `c-${Date.now()}`,
+      id: nextId('c'),
       slug: makeUniqueSlug(`thought-${Date.now()}`),
       type: 'thought',
       thoughtType: quickThoughtType,
@@ -214,7 +216,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
 
   function handleCreateFolder(draft: LibraryItemDraft) {
     addFolder({
-      id: `fd-${Date.now()}`,
+      id: nextId('fd'),
       owner: username ?? 'euan',
       name: draft.name,
       description: draft.description,
@@ -226,9 +228,29 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     bumpStore(n => n + 1)
   }
 
+  async function handleDeleteFolder(id: string, name: string) {
+    if (!window.confirm(
+      `删除文件夹「${name}」？\n\n里面的内容不会被删除，只会变成未归类。`
+    )) return
+    const { detached } = await removeFolder(id)
+    setDrill({})
+    bumpStore(n => n + 1)
+    alert(detached > 0 ? `已删除文件夹，${detached} 条内容已变为未归类。` : '已删除文件夹。')
+  }
+
+  async function handleDeleteSeries(id: string, name: string) {
+    if (!window.confirm(
+      `删除系列「${name}」？\n\n里面的文件夹和内容都不会被删除，只会脱离这个系列。`
+    )) return
+    const { detachedFolders, detachedItems } = await removeSeries(id)
+    setDrill({})
+    bumpStore(n => n + 1)
+    alert(`已删除系列。${detachedFolders} 个文件夹、${detachedItems} 条内容已脱离该系列。`)
+  }
+
   function handleCreateSeries(draft: LibraryItemDraft) {
     addSeries({
-      id: `sr-${Date.now()}`,
+      id: nextId('sr'),
       owner: username ?? 'euan',
       name: draft.name,
       description: draft.description,
@@ -429,6 +451,19 @@ export default function ContentListPage({ section }: ContentListPageProps) {
             showFolderForm={showFolderForm}
             showSeriesForm={showSeriesForm}
             editingFolder={editingFolder}
+            editingSeries={editingSeries}
+            onEditSeries={setEditingSeries}
+            onDeleteFolder={handleDeleteFolder}
+            onDeleteSeries={handleDeleteSeries}
+            onSaveSeries={(id, draft) => {
+              updateSeries(id, {
+                name: draft.name,
+                description: draft.description,
+                cover: draft.cover,
+              })
+              setEditingSeries(false)
+              bumpStore(n => n + 1)
+            }}
             onShowFolderForm={setShowFolderForm}
             onShowSeriesForm={setShowSeriesForm}
             onEditFolder={setEditingFolder}
@@ -501,6 +536,11 @@ interface LibraryBrowserProps {
   showFolderForm: boolean
   showSeriesForm: boolean
   editingFolder: boolean
+  editingSeries: boolean
+  onEditSeries: (v: boolean) => void
+  onDeleteFolder: (id: string, name: string) => void
+  onDeleteSeries: (id: string, name: string) => void
+  onSaveSeries: (id: string, draft: LibraryItemDraft) => void
   onShowFolderForm: (v: boolean) => void
   onShowSeriesForm: (v: boolean) => void
   onEditFolder: (v: boolean) => void
@@ -512,9 +552,10 @@ interface LibraryBrowserProps {
 function LibraryBrowser({
   view, isOwner, folders, seriesList, baseItems, applyFilters,
   openFolder, openSeries, onOpenFolder, onOpenSeries, onBack,
-  showFolderForm, showSeriesForm, editingFolder,
-  onShowFolderForm, onShowSeriesForm, onEditFolder,
-  onCreateFolder, onCreateSeries, onSaveFolder,
+  showFolderForm, showSeriesForm, editingFolder, editingSeries,
+  onShowFolderForm, onShowSeriesForm, onEditFolder, onEditSeries,
+  onCreateFolder, onCreateSeries, onSaveFolder, onSaveSeries,
+  onDeleteFolder, onDeleteSeries,
 }: LibraryBrowserProps) {
   /* ----- inside a folder ----- */
   if (openFolder) {
@@ -557,9 +598,18 @@ function LibraryBrowser({
               </p>
             </div>
             {isOwner && (
-              <button type="button" onClick={() => onEditFolder(true)} className="life-button text-xs">
-                设置
-              </button>
+              <div className="flex shrink-0 gap-2">
+                <button type="button" onClick={() => onEditFolder(true)} className="life-button text-xs">
+                  设置
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDeleteFolder(openFolder.id, openFolder.name)}
+                  className="life-button text-xs hover:border-[#B23B3B] hover:text-[#B23B3B]"
+                >
+                  删除
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -587,18 +637,46 @@ function LibraryBrowser({
           ← 返回系列
         </button>
 
-        <div className="mb-8 flex flex-wrap items-start gap-5 border-b border-[color:var(--border)] pb-6">
-          <LibraryCover name={openSeries.name} kind="series" cover={openSeries.cover} className="h-20 w-20 shrink-0" />
-          <div className="min-w-48 flex-1">
-            <h2 className="text-xl font-medium text-[color:var(--foreground)]">{openSeries.name}</h2>
-            {openSeries.description && (
-              <p className="mt-1 text-sm leading-6 text-[color:var(--muted-foreground)]">{openSeries.description}</p>
+        {editingSeries ? (
+          <LibraryItemForm
+            kind="series"
+            initial={{
+              name: openSeries.name,
+              description: openSeries.description ?? '',
+              cover: openSeries.cover,
+            }}
+            submitLabel="保存系列"
+            onCancel={() => onEditSeries(false)}
+            onSubmit={draft => onSaveSeries(openSeries.id, draft)}
+          />
+        ) : (
+          <div className="mb-8 flex flex-wrap items-start gap-5 border-b border-[color:var(--border)] pb-6">
+            <LibraryCover name={openSeries.name} kind="series" cover={openSeries.cover} className="h-20 w-20 shrink-0" />
+            <div className="min-w-48 flex-1">
+              <h2 className="text-xl font-medium text-[color:var(--foreground)]">{openSeries.name}</h2>
+              {openSeries.description && (
+                <p className="mt-1 text-sm leading-6 text-[color:var(--muted-foreground)]">{openSeries.description}</p>
+              )}
+              <p className="mt-2 text-xs text-[color:var(--muted-foreground)]">
+                {childFolders.length} 个文件夹 · 共 {total} 条内容
+              </p>
+            </div>
+            {isOwner && (
+              <div className="flex shrink-0 gap-2">
+                <button type="button" onClick={() => onEditSeries(true)} className="life-button text-xs">
+                  设置
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDeleteSeries(openSeries.id, openSeries.name)}
+                  className="life-button text-xs hover:border-[#B23B3B] hover:text-[#B23B3B]"
+                >
+                  删除
+                </button>
+              </div>
             )}
-            <p className="mt-2 text-xs text-[color:var(--muted-foreground)]">
-              {childFolders.length} 个文件夹 · 共 {total} 条内容
-            </p>
           </div>
-        </div>
+        )}
 
         {childFolders.length > 0 && (
           <div className="mb-10">

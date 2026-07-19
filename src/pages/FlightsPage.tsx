@@ -5,7 +5,7 @@ import Footer from '../components/Footer'
 import WorldMap from '../components/WorldMap'
 import FlightCsvImport from '../components/FlightCsvImport'
 import PrivateModuleGate from '../components/PrivateModuleGate'
-import { flightRecords, airports } from '../mockData'
+import { flightRecords, airports, nextId } from '../mockData'
 import type { FlightRecord, FlightStatus } from '../types'
 import { useIsOwnerOf } from '../auth'
 
@@ -119,7 +119,7 @@ export default function FlightsPage() {
       return
     }
     const rec: FlightRecord = {
-      id: `fl-${Date.now()}`,
+      id: nextId('fl'),
       date: form.date,
       airline: form.airline.trim(),
       flightNo,
