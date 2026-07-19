@@ -330,6 +330,11 @@ export function updateSeries(id: string, patch: Partial<Series>): void {
   if (target) Object.assign(target, patch)
 }
 
+export function deleteContentItem(id: string): void {
+  const index = allContent.findIndex(c => c.id === id)
+  if (index >= 0) allContent.splice(index, 1)
+}
+
 export function updateContentItem(id: string, patch: Partial<ContentItem>): void {
   const target = allContent.find(c => c.id === id)
   if (target) Object.assign(target, patch)

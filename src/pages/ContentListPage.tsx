@@ -169,6 +169,11 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     navigate(currentUser ? target : loginUrlFor(target))
   }
 
+  function handleImport() {
+    const target = '/new/note?import=1'
+    navigate(currentUser ? target : loginUrlFor(target))
+  }
+
   function handleQuickThoughtSubmit(e: React.FormEvent) {
     e.preventDefault()
     const text = quickText.trim()
@@ -252,9 +257,16 @@ export default function ContentListPage({ section }: ContentListPageProps) {
             </p>
           </div>
 
-          <button type="button" onClick={handleNew} className="life-button life-button-primary text-sm">
-            + 新建
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {sec === 'pkm' && (
+              <button type="button" onClick={handleImport} className="life-button text-sm">
+                导入 Markdown
+              </button>
+            )}
+            <button type="button" onClick={handleNew} className="life-button life-button-primary text-sm">
+              + 新建
+            </button>
+          </div>
         </div>
 
         {/* Quick capture (thoughts, owner only) */}

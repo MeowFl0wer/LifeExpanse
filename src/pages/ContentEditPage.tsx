@@ -218,12 +218,16 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
         <div className="space-y-5">
           {/* Title */}
           <div>
+            <label htmlFor="edit-title" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+              标题
+            </label>
             <input
+              id="edit-title"
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
               placeholder="标题"
-              className="w-full border-0 border-b border-[color:var(--border)] bg-transparent px-0 py-2 text-3xl font-light text-[color:var(--foreground)] transition-colors placeholder:text-[color:var(--border)] focus:border-[color:var(--primary)] focus:outline-none"
+              className="life-input w-full px-4 py-3 text-xl font-medium"
             />
           </div>
 
@@ -376,14 +380,20 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
 
           {/* Body editor / preview */}
           {tab === 'write' ? (
-            <textarea
-              value={body}
-              onChange={e => setBody(e.target.value)}
-              placeholder="开始书写..."
-              rows={24}
-              className="w-full px-0 py-2 text-sm leading-relaxed border-0 bg-transparent text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] focus:outline-none resize-none"
-              style={{ minHeight: '60vh' }}
-            />
+            <div>
+              <label htmlFor="edit-body" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                正文
+              </label>
+              <textarea
+                id="edit-body"
+                value={body}
+                onChange={e => setBody(e.target.value)}
+                placeholder="开始书写..."
+                rows={24}
+                className="life-input w-full resize-y px-4 py-3 text-sm leading-7"
+                style={{ minHeight: '55vh' }}
+              />
+            </div>
           ) : (
             <div className="life-surface min-h-96 p-6">
               {body ? (

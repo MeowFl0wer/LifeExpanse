@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import VisibilityBadge from '../components/VisibilityBadge'
 import MediaInsertMenu from '../components/MediaInsertMenu'
 import MarkdownRenderer from '../components/MarkdownRenderer'
@@ -11,6 +11,7 @@ import {
 import { slugify } from '../lib/slug'
 import { extractHashTags, normaliseMembership } from '../lib/library'
 import LibraryPicker from '../components/LibraryPicker'
+import { parseMarkdownFile, validateMarkdownFile } from '../lib/markdownImport'
 import type { ContentItem, ContentKind, ContentType, ThoughtType, ThoughtSourceType, Visibility } from '../types'
 
 type CreateType = 'thought' | 'diary' | 'note' | 'article' | 'trajectory'
@@ -37,6 +38,7 @@ const sourceTypeOptions: { value: ThoughtSourceType; label: string }[] = [
 export default function ContentCreatePage() {
   const { type } = useParams<{ type: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const currentUser = useCurrentUser()
 
   const createType = (type as CreateType) in typeConfig ? (type as CreateType) : 'note'
@@ -85,6 +87,48 @@ export default function ContentCreatePage() {
 
   // #tags typed into the body are captured alongside the comma-separated field.
   const inlineTags = extractHashTags(body)
+
+  // Markdown import
+  const mdInputRef = useRef<HTMLInputElement>(null)
+  const [importNotice, setImportNotice] = useState('')
+  const [importError, setImportError] = useState('')
+  const supportsImport = createType === 'note' || createType === 'article'
+
+  // /new/note?import=1 opens the picker straight away.
+  useEffect(() => {
+    if (supportsImport && searchParams.get('import') === '1') {
+      mdInputRef.current?.click()
+    }
+    // Only on mount: re-opening on every render would trap the user in a dialog.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function handleMarkdownFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    const problem = validateMarkdownFile(file)
+    if (problem) {
+      setImportError(problem)
+      setImportNotice('')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onerror = () => setImportError('读取文件失败，请重试')
+    reader.onload = () => {
+      const parsed = parseMarkdownFile(file.name, String(reader.result ?? ''))
+      // Imported content lands in the form for review rather than saving
+      // straight away, so nothing is published without being seen.
+      setTitle(parsed.title)
+      setBody(parsed.body)
+      if (parsed.tags.length > 0) setTagInput(parsed.tags.join(', '))
+      setImportError('')
+      setImportNotice(`已导入「${file.name}」，检查无误后再保存。`)
+    }
+    reader.readAsText(file)
+  }
 
   const isDirty = Boolean(title || body || tagInput || trajCity || sourceTitle)
 
@@ -240,13 +284,52 @@ export default function ContentCreatePage() {
 
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
         <div className="space-y-5">
-          <input
-            type="text"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder={config.titlePlaceholder}
-            className="w-full border-0 border-b border-[color:var(--border)] bg-transparent px-0 py-2 text-3xl font-light text-[color:var(--foreground)] transition-colors placeholder:text-[color:var(--border)] focus:border-[color:var(--primary)] focus:outline-none"
-          />
+          {supportsImport && (
+            <div className="life-surface flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-[color:var(--foreground)]">从 Markdown 文件导入</p>
+                <p className="mt-0.5 text-xs leading-6 text-[color:var(--muted-foreground)]">
+                  支持 .md / .markdown。可识别 front-matter 的 title、tags、summary，
+                  否则用首个一级标题或文件名作标题。
+                </p>
+              </div>
+              <input
+                ref={mdInputRef}
+                type="file"
+                accept=".md,.markdown,.mdown,.mkd,text/markdown"
+                className="hidden"
+                onChange={handleMarkdownFile}
+              />
+              <button type="button" onClick={() => mdInputRef.current?.click()} className="life-button shrink-0 text-sm">
+                选择文件
+              </button>
+            </div>
+          )}
+
+          {importNotice && (
+            <p className="rounded-[var(--radius)] border border-[#D5EBD9] bg-[#EEF8F0] px-3 py-2 text-xs text-[#3F744D]">
+              {importNotice}
+            </p>
+          )}
+          {importError && (
+            <p className="rounded-[var(--radius)] border border-[#F3D3D3] bg-[#FDEEEE] px-3 py-2 text-xs text-[#B23B3B]">
+              {importError}
+            </p>
+          )}
+
+          <div>
+            <label htmlFor="content-title" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+              标题{config.requiresTitle && <span className="ml-1 text-[#B23B3B]">*</span>}
+            </label>
+            <input
+              id="content-title"
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder={config.titlePlaceholder}
+              className="life-input w-full px-4 py-3 text-xl font-medium"
+            />
+          </div>
 
           {/* Trajectory-specific fields */}
           {createType === 'trajectory' && (
@@ -409,14 +492,20 @@ export default function ContentCreatePage() {
           </div>
 
           {tab === 'write' ? (
-            <textarea
-              value={body}
-              onChange={e => setBody(e.target.value)}
-              placeholder={config.bodyPlaceholder}
-              rows={createType === 'thought' ? 6 : 24}
-              className="w-full resize-none border-0 bg-transparent px-0 py-2 text-sm leading-relaxed text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] focus:outline-none"
-              style={{ minHeight: createType === 'thought' ? '10rem' : '60vh' }}
-            />
+            <div>
+              <label htmlFor="content-body" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                正文<span className="ml-1 text-[#B23B3B]">*</span>
+              </label>
+              <textarea
+                id="content-body"
+                value={body}
+                onChange={e => setBody(e.target.value)}
+                placeholder={config.bodyPlaceholder}
+                rows={createType === 'thought' ? 6 : 24}
+                className="life-input w-full resize-y px-4 py-3 text-sm leading-7"
+                style={{ minHeight: createType === 'thought' ? '10rem' : '55vh' }}
+              />
+            </div>
           ) : (
             <div className="life-surface min-h-96 p-6">
               {body ? <MarkdownRenderer content={body} /> : <p className="text-sm italic text-[color:var(--muted-foreground)]">预览区为空</p>}

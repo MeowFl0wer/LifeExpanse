@@ -6,7 +6,7 @@ import TagList from '../components/TagList'
 import VisibilityBadge from '../components/VisibilityBadge'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import CommentSection from '../components/CommentSection'
-import { getContentBySlug, folders as allFolders, series as allSeries } from '../mockData'
+import { getContentBySlug, deleteContentItem, folders as allFolders, series as allSeries } from '../mockData'
 import { locationTrail } from '../lib/library'
 import { useCurrentUser } from '../auth'
 
@@ -57,6 +57,7 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
   const currentUser = useCurrentUser()
   const item = getContentBySlug(slug ?? '')
   const [localContentKind, setLocalContentKind] = useState(item?.contentKind)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const isOwner = item !== undefined && currentUser === item.author
 
@@ -89,6 +90,18 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
   function handlePublishAsArticle() {
     alert('前端原型：这会把当前笔记发布为文章。\n\n正文、内容 ID、版本历史和内部链接都会保留，只补充文章摘要、封面、分类、系列、SEO 和评论设置。')
     setLocalContentKind('article')
+  }
+
+  function handleDelete() {
+    // Second step: an explicit OS-level confirm on top of the inline one, since
+    // this removes content rather than just changing it.
+    const sure = window.confirm(`确定要删除「${item!.title}」吗？\n\n删除后会从列表、搜索和所属文件夹中移除。`)
+    if (!sure) {
+      setConfirmingDelete(false)
+      return
+    }
+    deleteContentItem(item!.id)
+    navigate(`/${username}/${section}`, { replace: true })
   }
 
   function handleReturnToNote() {
@@ -181,6 +194,34 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
                   </svg>
                   编辑
                 </button>
+
+                {/* Deletion takes two deliberate steps rather than one click. */}
+                {confirmingDelete ? (
+                  <span className="flex flex-wrap items-center gap-2 rounded-full bg-[#FDEEEE] px-3 py-1">
+                    <span className="text-xs text-[#B23B3B]">确定删除这条内容？</span>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDelete(false)}
+                      className="text-xs text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
+                    >
+                      取消
+                    </button>
+                    <button type="button" onClick={handleDelete} className="text-xs font-medium text-[#B23B3B] hover:underline">
+                      确认删除
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDelete(true)}
+                    className="life-button text-xs hover:border-[#B23B3B] hover:text-[#B23B3B]"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M2.5 3.5h7M5 3.5V2.5h2v1M3.5 3.5l.5 6h4l.5-6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    删除
+                  </button>
+                )}
               </div>
             )}
           </div>
