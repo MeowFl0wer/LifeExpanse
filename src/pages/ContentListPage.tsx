@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import ContentCard from '../components/ContentCard'
-import VisibilityBadge from '../components/VisibilityBadge'
+import { visibilityConfig } from '../components/VisibilityBadge'
 import { allContent, addContentItem, makeUniqueSlug } from '../mockData'
 import type { ContentItem, ThoughtType, Visibility } from '../types'
 import { useIsOwnerOf } from '../auth'
@@ -44,8 +44,16 @@ function matchesSection(item: ContentItem, section: ContentSection) {
   return item.type === 'diary'
 }
 
-function uniqueValues(values: (string | undefined)[]) {
-  return Array.from(new Set(values.filter(Boolean) as string[]))
+/** Distinct values with how many items carry each, for the facet chips. */
+function facetCounts(values: (string | undefined)[]): { name: string; count: number }[] {
+  const counts = new Map<string, number>()
+  for (const value of values) {
+    if (!value) continue
+    counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  return Array.from(counts, ([name, count]) => ({ name, count })).sort((a, b) =>
+    a.name.localeCompare(b.name, 'zh-CN')
+  )
 }
 
 interface ContentListPageProps {
@@ -67,20 +75,29 @@ export default function ContentListPage({ section }: ContentListPageProps) {
   const [quickSourceTitle, setQuickSourceTitle] = useState('')
   const [quickSourceAuthor, setQuickSourceAuthor] = useState('')
   const [createdTick, setCreatedTick] = useState(0)
+  const [folderFilter, setFolderFilter] = useState('')
+  const [seriesFilter, setSeriesFilter] = useState('')
 
   const isOwner = useIsOwnerOf(username)
 
-  let items = allContent.filter(c => {
+  // Everything this viewer is allowed to see in this section. Facet lists are
+  // derived from this, not from the filtered result, so choosing one folder
+  // doesn't make every other folder disappear from the list.
+  const baseItems = allContent.filter(c => {
     if (!matchesSection(c, sec)) return false
     if (c.author !== username) return false
     if (!isOwner && c.visibility !== 'public') return false
     return true
   })
 
+  let items = baseItems
+
   if (sec === 'pkm') {
     if (pkmView === 'notes') items = items.filter(c => c.contentKind === 'note')
     if (pkmView === 'articles') items = items.filter(c => c.contentKind === 'article')
     if (pkmView === 'drafts') items = items.filter(c => c.visibility === 'draft')
+    if (folderFilter) items = items.filter(c => c.folder === folderFilter)
+    if (seriesFilter) items = items.filter(c => c.series === seriesFilter)
   }
 
   if (sec === 'thoughts' && thoughtFilter !== 'all') {
@@ -111,12 +128,14 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     filterVisibility !== 'all' ||
     filterTag !== '' ||
     filterKeyword !== '' ||
+    folderFilter !== '' ||
+    seriesFilter !== '' ||
     (sec === 'pkm' && pkmView !== 'all') ||
     (sec === 'thoughts' && thoughtFilter !== 'all')
 
-  const folders = useMemo(() => uniqueValues(items.map(item => item.folder)), [items])
-  const series = useMemo(() => uniqueValues(items.map(item => item.series)), [items])
-  const tags = useMemo(() => uniqueValues(items.flatMap(item => item.tags.map(tag => tag.name))), [items])
+  const folderFacets = facetCounts(baseItems.map(item => item.folder))
+  const seriesFacets = facetCounts(baseItems.map(item => item.series))
+  const tagFacets = facetCounts(baseItems.flatMap(item => item.tags.map(tag => tag.name)))
 
   function handleQuickThoughtSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -245,7 +264,14 @@ export default function ContentListPage({ section }: ContentListPageProps) {
               <button
                 key={view.key}
                 type="button"
-                onClick={() => setPkmView(view.key)}
+                onClick={() => {
+                  setPkmView(view.key)
+                  // A folder/series filter left over from another view would
+                  // silently hide results here.
+                  setFolderFilter('')
+                  setSeriesFilter('')
+                  if (view.key !== 'tags') setFilterTag('')
+                }}
                 className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
                   pkmView === view.key
                     ? 'border-[color:var(--primary)] bg-[#EEF8F0] text-[color:var(--primary)]'
@@ -280,19 +306,27 @@ export default function ContentListPage({ section }: ContentListPageProps) {
         <div className="mb-6 flex flex-wrap gap-3">
           {isOwner && (
             <div className="flex items-center gap-2">
-              {(['all', 'public', 'private', 'draft'] as const).map(v => (
-                <button
-                  key={v}
-                  onClick={() => setFilterVisibility(v)}
-                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                    filterVisibility === v
-                      ? 'border-[color:var(--primary)] bg-[#EEF8F0] text-[color:var(--primary)]'
-                      : 'border-[color:var(--border)] bg-white/70 text-[color:var(--muted-foreground)] hover:border-[color:var(--accent)]'
-                  }`}
-                >
-                  {v === 'all' ? '全部' : <VisibilityBadge visibility={v} />}
-                </button>
-              ))}
+              {(['all', 'public', 'private', 'draft'] as const).map(v => {
+                const active = filterVisibility === v
+                const activeClasses =
+                  v === 'all'
+                    ? 'border-[color:var(--primary)] bg-[#EEF8F0] text-[color:var(--primary)]'
+                    : visibilityConfig[v].classes
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setFilterVisibility(v)}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                      active
+                        ? activeClasses
+                        : 'border-[color:var(--border)] bg-white/70 text-[color:var(--muted-foreground)] hover:border-[color:var(--accent)]'
+                    }`}
+                  >
+                    {v === 'all' ? '全部' : visibilityConfig[v].label}
+                  </button>
+                )
+              })}
             </div>
           )}
 
@@ -328,35 +362,75 @@ export default function ContentListPage({ section }: ContentListPageProps) {
           </div>
         </div>
 
-        {sec === 'pkm' && pkmView === 'folders' && (
-          <div className="mb-6 flex flex-wrap gap-2">
-            {folders.map(folder => (
-              <span key={folder} className="rounded-full bg-[color:var(--secondary)] px-3 py-1 text-xs text-[color:var(--muted-foreground)]">
-                {folder}
-              </span>
-            ))}
-          </div>
-        )}
+        {sec === 'pkm' && (pkmView === 'folders' || pkmView === 'tags' || pkmView === 'series') && (
+          <div className="mb-6">
+            {(() => {
+              const facets =
+                pkmView === 'folders' ? folderFacets : pkmView === 'tags' ? tagFacets : seriesFacets
+              const selected =
+                pkmView === 'folders' ? folderFilter : pkmView === 'tags' ? filterTag : seriesFilter
+              const select = (name: string) => {
+                if (pkmView === 'folders') setFolderFilter(name)
+                else if (pkmView === 'tags') setFilterTag(name)
+                else setSeriesFilter(name)
+              }
+              const emptyLabel =
+                pkmView === 'folders' ? '暂无文件夹' : pkmView === 'tags' ? '暂无标签' : '暂无系列'
 
-        {sec === 'pkm' && pkmView === 'tags' && (
-          <div className="mb-6 flex flex-wrap gap-2">
-            {tags.map(tag => (
-              <span key={tag} className="rounded-full bg-[color:var(--secondary)] px-3 py-1 text-xs text-[color:var(--muted-foreground)]">
-                #{tag}
-              </span>
-            ))}
-          </div>
-        )}
+              if (facets.length === 0) {
+                return <p className="text-xs text-[color:var(--muted-foreground)]">{emptyLabel}</p>
+              }
 
-        {sec === 'pkm' && pkmView === 'series' && (
-          <div className="mb-6 flex flex-wrap gap-2">
-            {series.length ? series.map(name => (
-              <span key={name} className="rounded-full bg-[color:var(--secondary)] px-3 py-1 text-xs text-[color:var(--muted-foreground)]">
-                {name}
-              </span>
-            )) : (
-              <span className="text-xs text-[color:var(--muted-foreground)]">暂无系列</span>
-            )}
+              return (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => select('')}
+                      className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                        selected === ''
+                          ? 'border-[color:var(--primary)] bg-[#EEF8F0] text-[color:var(--primary)]'
+                          : 'border-[color:var(--border)] bg-white/70 text-[color:var(--muted-foreground)] hover:border-[color:var(--accent)]'
+                      }`}
+                    >
+                      全部
+                    </button>
+                    {facets.map(facet => {
+                      const active = selected === facet.name
+                      return (
+                        <button
+                          key={facet.name}
+                          type="button"
+                          onClick={() => select(active ? '' : facet.name)}
+                          className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                            active
+                              ? 'border-[color:var(--primary)] bg-[#EEF8F0] text-[color:var(--primary)]'
+                              : 'border-[color:var(--border)] bg-white/70 text-[color:var(--muted-foreground)] hover:border-[color:var(--accent)]'
+                          }`}
+                        >
+                          {pkmView === 'tags' ? `#${facet.name}` : facet.name}
+                          <span className="ml-1.5 opacity-60">{facet.count}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {selected && (
+                    <p className="mt-3 text-xs text-[color:var(--muted-foreground)]">
+                      正在按
+                      {pkmView === 'folders' ? '文件夹' : pkmView === 'tags' ? '标签' : '系列'}
+                      「{pkmView === 'tags' ? `#${selected}` : selected}」筛选，共 {items.length} 条。
+                      <button
+                        type="button"
+                        onClick={() => select('')}
+                        className="ml-2 text-[color:var(--primary)] hover:underline"
+                      >
+                        清除
+                      </button>
+                    </p>
+                  )}
+                </>
+              )
+            })()}
           </div>
         )}
 
