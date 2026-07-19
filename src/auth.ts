@@ -14,9 +14,14 @@ const listeners = new Set<Listener>()
 /** Cached so getSnapshot returns a stable reference between notifications. */
 let cachedUser: string | null = readSession()
 
+/**
+ * Persistent ("保持登录") sessions live in localStorage and survive a browser
+ * restart; otherwise the session lives in sessionStorage and ends with the tab.
+ * localStorage is checked first so a remembered login wins.
+ */
 function readSession(): string | null {
   try {
-    return window.localStorage.getItem(SESSION_KEY)
+    return window.localStorage.getItem(SESSION_KEY) ?? window.sessionStorage.getItem(SESSION_KEY)
   } catch {
     return null
   }
@@ -43,11 +48,18 @@ export function getCurrentUser(): string | null {
   return cachedUser
 }
 
-export function setCurrentUser(username: string): void {
+export function setCurrentUser(username: string, options: { remember?: boolean } = {}): void {
+  const remember = options.remember ?? false
   try {
-    window.localStorage.setItem(SESSION_KEY, username)
+    if (remember) {
+      window.localStorage.setItem(SESSION_KEY, username)
+      window.sessionStorage.removeItem(SESSION_KEY)
+    } else {
+      window.sessionStorage.setItem(SESSION_KEY, username)
+      window.localStorage.removeItem(SESSION_KEY)
+    }
   } catch {
-    // localStorage unavailable (private mode, disabled storage) — session simply won't persist
+    // Storage unavailable (private mode, disabled storage) — session won't persist
   }
   emit()
 }
@@ -55,6 +67,7 @@ export function setCurrentUser(username: string): void {
 export function clearCurrentUser(): void {
   try {
     window.localStorage.removeItem(SESSION_KEY)
+    window.sessionStorage.removeItem(SESSION_KEY)
   } catch {
     // ignore
   }

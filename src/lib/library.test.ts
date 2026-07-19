@@ -1,14 +1,20 @@
 import { describe, it, expect } from 'vitest'
 import {
-  effectiveSeriesId, itemsInFolder, foldersInSeries, looseItemsInSeries,
-  allItemsInSeries, unfiledItems, normaliseMembership, extractHashTags,
+  foldersOf, effectiveSeriesIds, itemsInFolder, foldersInSeries, looseItemsInSeries,
+  allItemsInSeries, unfiledItems, normaliseMembership, locationTrail, extractHashTags,
 } from './library'
-import type { ContentItem, Folder } from '../types'
+import type { ContentItem, Folder, Series } from '../types'
 
-const folders = [
-  { id: 'f1', owner: 'euan', name: '前端', seriesId: 's1', createdAt: '' },
-  { id: 'f2', owner: 'euan', name: '系统', createdAt: '' },
-] as Folder[]
+const folders: Folder[] = [
+  { id: 'f1', owner: 'euan', name: '前端', seriesIds: ['s1'], createdAt: '' },
+  { id: 'f2', owner: 'euan', name: '系统', seriesIds: ['s1', 's2'], createdAt: '' },
+  { id: 'f3', owner: 'euan', name: 'Inbox', createdAt: '' },
+]
+
+const series: Series[] = [
+  { id: 's1', owner: 'euan', name: '工程笔记', createdAt: '' },
+  { id: 's2', owner: 'euan', name: '运维手册', createdAt: '' },
+]
 
 function item(partial: Partial<ContentItem>): ContentItem {
   return {
@@ -18,51 +24,50 @@ function item(partial: Partial<ContentItem>): ContentItem {
   }
 }
 
-describe('effectiveSeriesId', () => {
-  it('takes the series from the folder when the note is filed', () => {
-    expect(effectiveSeriesId({ folderId: 'f1' }, folders)).toBe('s1')
+describe('multi-membership', () => {
+  it('a note can sit in several folders', () => {
+    const note = item({ folderIds: ['f1', 'f3'] })
+    expect(foldersOf(note, folders).map(f => f.id)).toEqual(['f1', 'f3'])
   })
 
-  it('uses the direct series when the note has no folder', () => {
-    expect(effectiveSeriesId({ seriesId: 's2' }, folders)).toBe('s2')
+  it('a folder can belong to several series', () => {
+    expect(foldersInSeries(folders, 's1').map(f => f.id)).toEqual(['f1', 'f2'])
+    expect(foldersInSeries(folders, 's2').map(f => f.id)).toEqual(['f2'])
   })
 
-  // Rule 2.8: a foldered note travels with its folder, never independently.
-  it('lets the folder override a stale direct series', () => {
-    expect(effectiveSeriesId({ folderId: 'f1', seriesId: 's9' }, folders)).toBe('s1')
+  it('inherits series from every folder the note is in', () => {
+    const note = item({ folderIds: ['f2'] })
+    expect(effectiveSeriesIds(note, folders).sort()).toEqual(['s1', 's2'])
   })
 
-  it('is undefined when the folder is in no series', () => {
-    expect(effectiveSeriesId({ folderId: 'f2', seriesId: 's9' }, folders)).toBeUndefined()
+  it('combines direct and inherited series without duplicates', () => {
+    const note = item({ folderIds: ['f1'], seriesIds: ['s1', 's2'] })
+    expect(effectiveSeriesIds(note, folders).sort()).toEqual(['s1', 's2'])
   })
 
-  it('is undefined when unfiled', () => {
-    expect(effectiveSeriesId({}, folders)).toBeUndefined()
+  it('a note filed nowhere belongs to no series', () => {
+    expect(effectiveSeriesIds(item({}), folders)).toEqual([])
   })
 })
 
-describe('membership queries', () => {
+describe('series composition', () => {
   const items = [
-    item({ id: 'a', folderId: 'f1' }),
-    item({ id: 'b', folderId: 'f2' }),
-    item({ id: 'c', seriesId: 's1' }),
+    item({ id: 'a', folderIds: ['f1'] }),          // via folder f1 -> s1
+    item({ id: 'b', seriesIds: ['s1'] }),          // loose in s1
+    item({ id: 'c', folderIds: ['f3'], seriesIds: ['s1'] }), // folder not in s1 -> still loose
     item({ id: 'd' }),
   ]
 
+  it('loose notes exclude those reachable through a folder of that series', () => {
+    expect(looseItemsInSeries(items, folders, 's1').map(i => i.id)).toEqual(['b', 'c'])
+  })
+
+  it('all notes in a series include those reached via folders', () => {
+    expect(allItemsInSeries(items, folders, 's1').map(i => i.id).sort()).toEqual(['a', 'b', 'c'])
+  })
+
   it('finds notes in a folder', () => {
     expect(itemsInFolder(items, 'f1').map(i => i.id)).toEqual(['a'])
-  })
-
-  it('finds folders in a series', () => {
-    expect(foldersInSeries(folders, 's1').map(f => f.id)).toEqual(['f1'])
-  })
-
-  it('loose notes exclude foldered ones', () => {
-    expect(looseItemsInSeries(items, 's1').map(i => i.id)).toEqual(['c'])
-  })
-
-  it('all notes in a series include those reached via a folder', () => {
-    expect(allItemsInSeries(items, folders, 's1').map(i => i.id).sort()).toEqual(['a', 'c'])
   })
 
   it('finds unfiled notes', () => {
@@ -71,25 +76,45 @@ describe('membership queries', () => {
 })
 
 describe('normaliseMembership', () => {
-  it('clears a direct series when a folder is chosen', () => {
-    expect(normaliseMembership({ folderId: 'f1', seriesId: 's9' })).toEqual({
-      folderId: 'f1',
-      seriesId: undefined,
+  // Rule: a note inside a folder that is in series S must not also be loose in S.
+  it('drops a direct series already covered by a chosen folder', () => {
+    expect(normaliseMembership({ folderIds: ['f1'], seriesIds: ['s1'] }, folders)).toEqual({
+      folderIds: ['f1'],
+      seriesIds: [],
     })
   })
 
-  it('keeps a direct series when there is no folder', () => {
-    expect(normaliseMembership({ seriesId: 's2' })).toEqual({
-      folderId: undefined,
-      seriesId: 's2',
+  it('keeps a direct series the folders do not cover', () => {
+    expect(normaliseMembership({ folderIds: ['f1'], seriesIds: ['s2'] }, folders)).toEqual({
+      folderIds: ['f1'],
+      seriesIds: ['s2'],
     })
   })
 
-  it('treats empty strings as unfiled', () => {
-    expect(normaliseMembership({ folderId: '', seriesId: '' })).toEqual({
-      folderId: undefined,
-      seriesId: undefined,
+  it('keeps several folders and several series', () => {
+    const result = normaliseMembership({ folderIds: ['f1', 'f3'], seriesIds: ['s2'] }, folders)
+    expect(result.folderIds).toEqual(['f1', 'f3'])
+    expect(result.seriesIds).toEqual(['s2'])
+  })
+
+  it('de-duplicates and drops blanks', () => {
+    expect(normaliseMembership({ folderIds: ['f3', 'f3', ''], seriesIds: ['s2', 's2'] }, folders)).toEqual({
+      folderIds: ['f3'],
+      seriesIds: ['s2'],
     })
+  })
+
+  it('handles nothing selected', () => {
+    expect(normaliseMembership({}, folders)).toEqual({ folderIds: [], seriesIds: [] })
+  })
+})
+
+describe('locationTrail', () => {
+  it('reports every folder and series a note belongs to', () => {
+    const note = item({ folderIds: ['f2'] })
+    const trail = locationTrail(note, folders, series)
+    expect(trail.folders.map(f => f.name)).toEqual(['系统'])
+    expect(trail.series.map(s => s.name).sort()).toEqual(['工程笔记', '运维手册'])
   })
 })
 

@@ -25,10 +25,13 @@ export interface ContentItem {
   updatedAt: string
   publishedAt: string
   author: string
-  /** Owning folder. A note in a folder inherits that folder's series. */
-  folderId?: string
-  /** Direct series membership. Ignored when folderId is set — see effectiveSeriesId. */
-  seriesId?: string
+  /** Folders this item is filed in. An item may sit in several. */
+  folderIds?: string[]
+  /**
+   * Series this item is filed into directly. A series already reached through
+   * one of its folders is not repeated here — see normaliseMembership.
+   */
+  seriesIds?: string[]
   category?: string
   cover?: string
   seoTitle?: string
@@ -57,8 +60,8 @@ export interface Folder {
   name: string
   description?: string
   cover?: string
-  /** Series this folder belongs to, if any. */
-  seriesId?: string
+  /** Series this folder belongs to. A folder may belong to several. */
+  seriesIds?: string[]
   createdAt: string
 }
 

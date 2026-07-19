@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Logo from '../components/Logo'
 import { setCurrentUser } from '../auth'
+import { safeNextPath } from '../lib/redirect'
 
 type LoginState = 'idle' | 'loading' | 'error' | 'success'
 
@@ -15,7 +16,7 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   // Where to land after signing in, e.g. /login?next=/new/note
-  const next = searchParams.get('next')
+  const next = safeNextPath(searchParams.get('next'))
 
   function validate(): string | null {
     if (!credential.trim()) return '请输入用户名或邮箱'
@@ -40,9 +41,9 @@ export default function LoginPage() {
       (credential === 'euan' || credential === 'euan@example.com') &&
       password === 'demo123456'
     ) {
-      setCurrentUser('euan')
+      setCurrentUser('euan', { remember })
       setState('success')
-      setTimeout(() => navigate(next && next.startsWith('/') ? next : '/app'), 600)
+      setTimeout(() => navigate(next), 600)
     } else {
       setState('error')
       setErrorMsg('用户名或密码不正确，请重试。（提示：用户名 euan，密码 demo123456）')

@@ -207,8 +207,12 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
             <div className="mt-5 border-t border-[color:var(--border)] pt-4 text-sm text-[color:var(--muted-foreground)]">
               <div className="flex flex-wrap gap-x-5 gap-y-2">
                 {item.category && <span>分类：{item.category}</span>}
-                {trail.folder && <span>文件夹：{trail.folder.name}</span>}
-                {trail.series && <span>系列：{trail.series.name}</span>}
+                {trail.folders.length > 0 && (
+                  <span>文件夹：{trail.folders.map(f => f.name).join('、')}</span>
+                )}
+                {trail.series.length > 0 && (
+                  <span>系列：{trail.series.map(s => s.name).join('、')}</span>
+                )}
                 <span>评论：{item.allowComments ? '已开启' : '未开启'}</span>
               </div>
               <p className="mt-2 text-xs">只有注册并登录的用户可以发表评论；普通 Note 默认不开启评论。</p>

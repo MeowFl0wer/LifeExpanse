@@ -31,8 +31,8 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
   const [contentKind, setContentKind] = useState<ContentKind>(item?.contentKind ?? 'note')
   const [thoughtType, setThoughtType] = useState<ThoughtType>(item?.thoughtType ?? 'original')
   const [allowComments, setAllowComments] = useState(item?.allowComments ?? false)
-  const [folderId, setFolderId] = useState(item?.folderId ?? '')
-  const [seriesId, setSeriesId] = useState(item?.seriesId ?? '')
+  const [folderIds, setFolderIds] = useState<string[]>(item?.folderIds ?? [])
+  const [seriesIds, setSeriesIds] = useState<string[]>(item?.seriesIds ?? [])
   const [, bumpLibrary] = useState(0)
   const [tab, setTab] = useState<Tab>('write')
   const [saving, setSaving] = useState(false)
@@ -47,8 +47,8 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
     contentKind !== (item?.contentKind ?? 'note') ||
     thoughtType !== (item?.thoughtType ?? 'original') ||
     allowComments !== (item?.allowComments ?? false) ||
-    folderId !== (item?.folderId ?? '') ||
-    seriesId !== (item?.seriesId ?? '')
+    folderIds.join() !== (item?.folderIds ?? []).join() ||
+    seriesIds.join() !== (item?.seriesIds ?? []).join()
 
   // Warn on page leave when dirty
   useEffect(() => {
@@ -101,7 +101,7 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
       allowComments,
       tags: tagNames.map((name, i) => ({ id: `tag-${Date.now()}-${i}`, name })),
       ...(item!.type === 'pkm'
-        ? { contentKind, ...normaliseMembership({ folderId, seriesId }) }
+        ? { contentKind, ...normaliseMembership({ folderIds, seriesIds }, allFolders) }
         : {}),
       ...(item!.type === 'thought' ? { thoughtType } : {}),
       updatedAt: new Date().toISOString(),
@@ -320,9 +320,9 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
               <LibraryPicker
                 folders={allFolders.filter(f => f.owner === item.author)}
                 series={allSeries.filter(s => s.owner === item.author)}
-                folderId={folderId}
-                seriesId={seriesId}
-                onChange={next => { setFolderId(next.folderId); setSeriesId(next.seriesId) }}
+                folderIds={folderIds}
+                seriesIds={seriesIds}
+                onChange={next => { setFolderIds(next.folderIds); setSeriesIds(next.seriesIds) }}
                 onCreateFolder={name => {
                   const id = `fd-${Date.now()}`
                   addFolder({ id, owner: item.author, name, createdAt: new Date().toISOString() })

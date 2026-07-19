@@ -223,6 +223,38 @@ describe('visibility filter chips', () => {
   })
 })
 
+describe('library metadata is not leaked to guests', () => {
+  beforeEach(() => clearCurrentUser())
+
+  // Inbox holds only a draft, so its very name and description would disclose
+  // the shape of a private library.
+  it('hides a folder whose contents are all private', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Folders' }))
+
+    expect(screen.queryByText('Inbox')).toBeNull()
+    expect(screen.queryByText('还没成形的东西。')).toBeNull()
+  })
+
+  it('still shows folders that hold public content', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Folders' }))
+
+    expect(screen.getByText('前端 / React')).toBeTruthy()
+  })
+
+  it('shows the private folder to its owner', async () => {
+    const user = userEvent.setup()
+    setCurrentUser('euan')
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Folders' }))
+
+    expect(screen.getByText('Inbox')).toBeTruthy()
+  })
+})
+
 describe('new content entry', () => {
   beforeEach(() => clearCurrentUser())
 

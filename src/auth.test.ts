@@ -17,8 +17,23 @@ describe('session store', () => {
     expect(isLoggedIn()).toBe(true)
   })
 
-  it('persists to localStorage so a reload keeps the session', () => {
+  // Default is a tab-scoped session; only "保持登录" survives a browser restart.
+  it('keeps an unremembered session in sessionStorage only', () => {
     setCurrentUser('euan')
+    expect(window.sessionStorage.getItem('life_session_user')).toBe('euan')
+    expect(window.localStorage.getItem('life_session_user')).toBeNull()
+  })
+
+  it('persists a remembered session to localStorage', () => {
+    setCurrentUser('euan', { remember: true })
+    expect(window.localStorage.getItem('life_session_user')).toBe('euan')
+    expect(window.sessionStorage.getItem('life_session_user')).toBeNull()
+  })
+
+  it('switching to a remembered session does not leave a stale copy behind', () => {
+    setCurrentUser('euan')
+    setCurrentUser('euan', { remember: true })
+    expect(window.sessionStorage.getItem('life_session_user')).toBeNull()
     expect(window.localStorage.getItem('life_session_user')).toBe('euan')
   })
 

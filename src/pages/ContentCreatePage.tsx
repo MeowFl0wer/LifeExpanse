@@ -65,8 +65,8 @@ export default function ContentCreatePage() {
   const [trajWriteToMap, setTrajWriteToMap] = useState(true)
 
   // Library placement (notes and articles only)
-  const [folderId, setFolderId] = useState('')
-  const [seriesId, setSeriesId] = useState('')
+  const [folderIds, setFolderIds] = useState<string[]>([])
+  const [seriesIds, setSeriesIds] = useState<string[]>([])
   const [, bumpLibrary] = useState(0)
 
   function createFolder(name: string): string {
@@ -192,7 +192,7 @@ export default function ContentCreatePage() {
         ? {
             contentKind,
             allowComments: contentKind === 'article',
-            ...normaliseMembership({ folderId, seriesId }),
+            ...normaliseMembership({ folderIds, seriesIds }, allFolders),
           }
         : {}),
       ...(type === 'thought'
@@ -365,9 +365,9 @@ export default function ContentCreatePage() {
               <LibraryPicker
                 folders={allFolders.filter(f => f.owner === currentUser)}
                 series={allSeries.filter(s => s.owner === currentUser)}
-                folderId={folderId}
-                seriesId={seriesId}
-                onChange={next => { setFolderId(next.folderId); setSeriesId(next.seriesId) }}
+                folderIds={folderIds}
+                seriesIds={seriesIds}
+                onChange={next => { setFolderIds(next.folderIds); setSeriesIds(next.seriesIds) }}
                 onCreateFolder={createFolder}
                 onCreateSeries={createSeries}
               />

@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
@@ -19,15 +19,25 @@ import AccountPage from './pages/AccountPage'
 import AdminPage from './pages/AdminPage'
 import AboutPage from './pages/AboutPage'
 import { useIsLoggedIn, useIsAdmin } from './auth'
+import { loginUrlFor } from './lib/redirect'
+
+/** Sends a guest to sign in and returns them to where they were headed. */
+function useLoginRedirect(): string {
+  const location = useLocation()
+  return loginUrlFor(`${location.pathname}${location.search}`)
+}
 
 function RequireAuth({ children }: { children: ReactElement }) {
-  return useIsLoggedIn() ? children : <Navigate to="/login" replace />
+  const loggedIn = useIsLoggedIn()
+  const loginUrl = useLoginRedirect()
+  return loggedIn ? children : <Navigate to={loginUrl} replace />
 }
 
 function RequireAdmin({ children }: { children: ReactElement }) {
   const loggedIn = useIsLoggedIn()
   const admin = useIsAdmin()
-  if (!loggedIn) return <Navigate to="/login" replace />
+  const loginUrl = useLoginRedirect()
+  if (!loggedIn) return <Navigate to={loginUrl} replace />
   return admin ? children : <Navigate to="/app" replace />
 }
 

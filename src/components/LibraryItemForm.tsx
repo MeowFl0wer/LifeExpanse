@@ -6,7 +6,8 @@ export interface LibraryItemDraft {
   name: string
   description: string
   cover?: string
-  seriesId?: string
+  /** Folders may belong to several series. */
+  seriesIds: string[]
 }
 
 interface LibraryItemFormProps {
@@ -25,7 +26,7 @@ export default function LibraryItemForm({
   const [name, setName] = useState(initial?.name ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [cover, setCover] = useState<string | undefined>(initial?.cover)
-  const [seriesId, setSeriesId] = useState(initial?.seriesId ?? '')
+  const [seriesIds, setSeriesIds] = useState<string[]>(initial?.seriesIds ?? [])
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -52,7 +53,7 @@ export default function LibraryItemForm({
       name: name.trim(),
       description: description.trim(),
       cover,
-      seriesId: seriesId || undefined,
+      seriesIds,
     })
   }
 
@@ -112,20 +113,31 @@ export default function LibraryItemForm({
 
           {kind === 'folder' && (
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
-                归入系列（可选）
-              </label>
-              <select
-                value={seriesId}
-                onChange={e => setSeriesId(e.target.value)}
-                className="life-input w-full px-3 py-2 text-sm"
-              >
-                <option value="">不归入系列</option>
-                {seriesOptions.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">
+              <p className="mb-1.5 text-xs font-medium text-[color:var(--foreground)]">
+                归入系列（可多选）
+              </p>
+              {seriesOptions.length === 0 ? (
+                <p className="text-xs text-[color:var(--muted-foreground)]">还没有系列</p>
+              ) : (
+                <div className="max-h-32 space-y-1.5 overflow-y-auto pr-1">
+                  {seriesOptions.map(s => (
+                    <label key={s.id} className="flex cursor-pointer items-center gap-2 text-sm text-[color:var(--foreground)]">
+                      <input
+                        type="checkbox"
+                        checked={seriesIds.includes(s.id)}
+                        onChange={() =>
+                          setSeriesIds(prev =>
+                            prev.includes(s.id) ? prev.filter(x => x !== s.id) : [...prev, s.id]
+                          )
+                        }
+                        className="h-3.5 w-3.5 shrink-0 accent-[color:var(--primary)]"
+                      />
+                      <span className="truncate">{s.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="mt-1.5 text-xs text-[color:var(--muted-foreground)]">
                 文件夹归入系列后，它里面的笔记会跟着一起进入该系列。
               </p>
             </div>

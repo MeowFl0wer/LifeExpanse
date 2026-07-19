@@ -13,6 +13,7 @@ import {
   addFolder, addSeries, updateFolder, getFolder, getSeries,
 } from '../mockData'
 import { itemsInFolder, foldersInSeries, looseItemsInSeries, allItemsInSeries } from '../lib/library'
+import { loginUrlFor } from '../lib/redirect'
 import type { ContentItem, Folder, Series, ThoughtType, Visibility } from '../types'
 import { useIsOwnerOf, useCurrentUser } from '../auth'
 
@@ -96,9 +97,6 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     setEditingFolder(false)
   }
 
-  const ownFolders = allFolders.filter(f => f.owner === username)
-  const ownSeries = allSeries.filter(s => s.owner === username)
-
   // Everything this viewer may see in this section.
   const baseItems = allContent.filter(c => {
     if (!matchesSection(c, sec)) return false
@@ -106,6 +104,18 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     if (!isOwner && c.visibility !== 'public') return false
     return true
   })
+
+  // A folder or series is itself metadata: its name and description would leak
+  // the shape of a private library. A guest only sees ones that actually hold
+  // something public.
+  const authorFolders = allFolders.filter(f => f.owner === username)
+  const authorSeries = allSeries.filter(s => s.owner === username)
+  const ownFolders = isOwner
+    ? authorFolders
+    : authorFolders.filter(f => itemsInFolder(baseItems, f.id).length > 0)
+  const ownSeries = isOwner
+    ? authorSeries
+    : authorSeries.filter(s => allItemsInSeries(baseItems, authorFolders, s.id).length > 0)
 
   function applyCommonFilters(list: ContentItem[]): ContentItem[] {
     let out = list
@@ -145,7 +155,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
   /** New content: a guest is sent through login and returned here afterwards. */
   function handleNew() {
     const target = sec === 'pkm' ? '/new/note' : sec === 'diary' ? '/new/diary' : '/new/thought'
-    navigate(currentUser ? target : `/login?next=${encodeURIComponent(target)}`)
+    navigate(currentUser ? target : loginUrlFor(target))
   }
 
   function handleQuickThoughtSubmit(e: React.FormEvent) {
@@ -193,7 +203,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
       name: draft.name,
       description: draft.description,
       cover: draft.cover,
-      seriesId: draft.seriesId,
+      seriesIds: draft.seriesIds,
       createdAt: new Date().toISOString(),
     })
     setShowFolderForm(false)
@@ -406,7 +416,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
                 name: draft.name,
                 description: draft.description,
                 cover: draft.cover,
-                seriesId: draft.seriesId,
+                seriesIds: draft.seriesIds,
               })
               setEditingFolder(false)
               bumpStore(n => n + 1)
@@ -486,7 +496,7 @@ function LibraryBrowser({
   /* ----- inside a folder ----- */
   if (openFolder) {
     const notes = applyFilters(itemsInFolder(baseItems, openFolder.id))
-    const parentSeries = seriesList.find(s => s.id === openFolder.seriesId)
+    const parentSeries = seriesList.filter(s => (openFolder.seriesIds ?? []).includes(s.id))
 
     return (
       <section>
@@ -502,7 +512,7 @@ function LibraryBrowser({
               name: openFolder.name,
               description: openFolder.description ?? '',
               cover: openFolder.cover,
-              seriesId: openFolder.seriesId,
+              seriesIds: openFolder.seriesIds ?? [],
             }}
             submitLabel="保存文件夹"
             onCancel={() => onEditFolder(false)}
@@ -518,7 +528,9 @@ function LibraryBrowser({
               )}
               <p className="mt-2 text-xs text-[color:var(--muted-foreground)]">
                 {notes.length} 条内容
-                {parentSeries && <> · 属于系列「{parentSeries.name}」</>}
+                {parentSeries.length > 0 && (
+                  <> · 属于系列「{parentSeries.map(s => s.name).join('、')}」</>
+                )}
               </p>
             </div>
             {isOwner && (
@@ -543,7 +555,7 @@ function LibraryBrowser({
   /* ----- inside a series ----- */
   if (openSeries) {
     const childFolders = foldersInSeries(folders, openSeries.id)
-    const loose = applyFilters(looseItemsInSeries(baseItems, openSeries.id))
+    const loose = applyFilters(looseItemsInSeries(baseItems, folders, openSeries.id))
     const total = allItemsInSeries(baseItems, folders, openSeries.id).length
 
     return (

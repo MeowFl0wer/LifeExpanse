@@ -1,53 +1,47 @@
 import { useState } from 'react'
+import { normaliseMembership } from '../lib/library'
 import type { Folder, Series } from '../types'
 
 interface LibraryPickerProps {
   folders: Folder[]
   series: Series[]
-  folderId: string
-  seriesId: string
-  onChange: (next: { folderId: string; seriesId: string }) => void
+  folderIds: string[]
+  seriesIds: string[]
+  onChange: (next: { folderIds: string[]; seriesIds: string[] }) => void
   onCreateFolder: (name: string) => string
   onCreateSeries: (name: string) => string
 }
 
-const NEW = '__new__'
-
 /**
  * Folder + series selection for the editor.
  *
- * Picking a folder disables the series select and shows the series inherited
- * from that folder, because a foldered note travels with its folder (rule 2.8)
- * and must not be filed into a different series independently.
+ * Membership is many-to-many, so both are checkbox lists. A series already
+ * covered by a chosen folder is shown as inherited and locked: the note
+ * reaches that series through its folder, and ticking it separately would put
+ * the same note both inside the folder and loose beside it.
  */
 export default function LibraryPicker({
-  folders, series, folderId, seriesId, onChange, onCreateFolder, onCreateSeries,
+  folders, series, folderIds, seriesIds, onChange, onCreateFolder, onCreateSeries,
 }: LibraryPickerProps) {
   const [creating, setCreating] = useState<'folder' | 'series' | null>(null)
   const [draftName, setDraftName] = useState('')
 
-  const selectedFolder = folders.find(f => f.id === folderId)
-  const inheritedSeries = selectedFolder?.seriesId
-    ? series.find(s => s.id === selectedFolder.seriesId)
-    : undefined
+  const chosenFolders = folders.filter(f => folderIds.includes(f.id))
+  const inheritedSeriesIds = new Set(chosenFolders.flatMap(f => f.seriesIds ?? []))
 
-  function handleFolderChange(value: string) {
-    if (value === NEW) {
-      setCreating('folder')
-      setDraftName('')
-      return
-    }
-    // Choosing a folder clears any direct series link.
-    onChange({ folderId: value, seriesId: value ? '' : seriesId })
+  function apply(next: { folderIds: string[]; seriesIds: string[] }) {
+    onChange(normaliseMembership(next, folders))
   }
 
-  function handleSeriesChange(value: string) {
-    if (value === NEW) {
-      setCreating('series')
-      setDraftName('')
-      return
-    }
-    onChange({ folderId, seriesId: value })
+  function toggleFolder(id: string) {
+    const next = folderIds.includes(id) ? folderIds.filter(f => f !== id) : [...folderIds, id]
+    apply({ folderIds: next, seriesIds })
+  }
+
+  function toggleSeries(id: string) {
+    if (inheritedSeriesIds.has(id)) return
+    const next = seriesIds.includes(id) ? seriesIds.filter(s => s !== id) : [...seriesIds, id]
+    apply({ folderIds, seriesIds: next })
   }
 
   function confirmCreate() {
@@ -55,60 +49,107 @@ export default function LibraryPicker({
     if (!name) return
     if (creating === 'folder') {
       const id = onCreateFolder(name)
-      onChange({ folderId: id, seriesId: '' })
-    } else if (creating === 'series') {
+      apply({ folderIds: [...folderIds, id], seriesIds })
+    } else {
       const id = onCreateSeries(name)
-      onChange({ folderId, seriesId: id })
+      apply({ folderIds, seriesIds: [...seriesIds, id] })
     }
     setCreating(null)
     setDraftName('')
   }
 
   return (
-    <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">文件夹</label>
-          <select
-            value={folderId}
-            onChange={e => handleFolderChange(e.target.value)}
-            className="life-input w-full px-3 py-2 text-sm"
-          >
-            <option value="">不归入文件夹</option>
-            {folders.map(f => (
-              <option key={f.id} value={f.id}>{f.name}</option>
-            ))}
-            <option value={NEW}>+ 新建文件夹…</option>
-          </select>
+    <div className="grid gap-5 sm:grid-cols-2">
+      <fieldset>
+        <legend className="mb-2 text-xs font-medium text-[color:var(--foreground)]">
+          文件夹
+          {folderIds.length > 0 && (
+            <span className="ml-1.5 font-normal text-[color:var(--muted-foreground)]">
+              已选 {folderIds.length}
+            </span>
+          )}
+        </legend>
+
+        <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
+          {folders.length === 0 && (
+            <p className="text-xs text-[color:var(--muted-foreground)]">还没有文件夹</p>
+          )}
+          {folders.map(f => (
+            <label key={f.id} className="flex cursor-pointer items-center gap-2 text-sm text-[color:var(--foreground)]">
+              <input
+                type="checkbox"
+                checked={folderIds.includes(f.id)}
+                onChange={() => toggleFolder(f.id)}
+                className="h-3.5 w-3.5 shrink-0 accent-[color:var(--primary)]"
+              />
+              <span className="truncate">{f.name}</span>
+            </label>
+          ))}
         </div>
 
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">系列</label>
-          <select
-            value={folderId ? (inheritedSeries?.id ?? '') : seriesId}
-            onChange={e => handleSeriesChange(e.target.value)}
-            disabled={Boolean(folderId)}
-            className="life-input w-full px-3 py-2 text-sm disabled:opacity-60"
-          >
-            <option value="">不归入系列</option>
-            {series.map(s => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-            {!folderId && <option value={NEW}>+ 新建系列…</option>}
-          </select>
-        </div>
-      </div>
+        <button
+          type="button"
+          onClick={() => { setCreating('folder'); setDraftName('') }}
+          className="mt-2 text-xs text-[color:var(--primary)] hover:underline"
+        >
+          + 新建文件夹
+        </button>
+      </fieldset>
 
-      {folderId && (
-        <p className="text-xs text-[color:var(--muted-foreground)]">
-          {inheritedSeries
-            ? `已归入文件夹「${selectedFolder?.name}」，会跟随该文件夹进入系列「${inheritedSeries.name}」。`
-            : `已归入文件夹「${selectedFolder?.name}」。该文件夹目前不属于任何系列。`}
-        </p>
-      )}
+      <fieldset>
+        <legend className="mb-2 text-xs font-medium text-[color:var(--foreground)]">
+          系列
+          {(seriesIds.length + inheritedSeriesIds.size) > 0 && (
+            <span className="ml-1.5 font-normal text-[color:var(--muted-foreground)]">
+              已选 {seriesIds.length + inheritedSeriesIds.size}
+            </span>
+          )}
+        </legend>
+
+        <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
+          {series.length === 0 && (
+            <p className="text-xs text-[color:var(--muted-foreground)]">还没有系列</p>
+          )}
+          {series.map(s => {
+            const inherited = inheritedSeriesIds.has(s.id)
+            return (
+              <label
+                key={s.id}
+                className={`flex items-center gap-2 text-sm ${
+                  inherited
+                    ? 'cursor-default text-[color:var(--muted-foreground)]'
+                    : 'cursor-pointer text-[color:var(--foreground)]'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={inherited || seriesIds.includes(s.id)}
+                  disabled={inherited}
+                  onChange={() => toggleSeries(s.id)}
+                  className="h-3.5 w-3.5 shrink-0 accent-[color:var(--primary)]"
+                />
+                <span className="truncate">{s.name}</span>
+                {inherited && (
+                  <span className="shrink-0 rounded-full bg-[color:var(--secondary)] px-1.5 py-0.5 text-[10px]">
+                    随文件夹
+                  </span>
+                )}
+              </label>
+            )
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => { setCreating('series'); setDraftName('') }}
+          className="mt-2 text-xs text-[color:var(--primary)] hover:underline"
+        >
+          + 新建系列
+        </button>
+      </fieldset>
 
       {creating && (
-        <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius)] bg-[color:var(--secondary)] px-3 py-2.5">
+        <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius)] bg-[color:var(--secondary)] px-3 py-2.5 sm:col-span-2">
           <span className="text-xs text-[color:var(--muted-foreground)]">
             新建{creating === 'folder' ? '文件夹' : '系列'}
           </span>
@@ -130,6 +171,12 @@ export default function LibraryPicker({
             取消
           </button>
         </div>
+      )}
+
+      {inheritedSeriesIds.size > 0 && (
+        <p className="text-xs leading-6 text-[color:var(--muted-foreground)] sm:col-span-2">
+          标为「随文件夹」的系列是通过所选文件夹进入的，笔记会显示在该系列下对应的文件夹里。
+        </p>
       )}
     </div>
   )
