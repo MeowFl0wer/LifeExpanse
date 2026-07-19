@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import ContentCard from '../components/ContentCard'
@@ -37,10 +37,6 @@ const sourceTypeLabels = {
   webpage: '网页',
   other: '其他',
 }
-
-const ALL_TAGS = Array.from(
-  new Set(allContent.flatMap(c => c.tags.map(t => t.name)))
-)
 
 function matchesSection(item: ContentItem, section: ContentSection) {
   if (section === 'thoughts') return item.type === 'thought'
@@ -100,6 +96,13 @@ export default function ContentListPage() {
       c.title.toLowerCase().includes(kw) || c.summary.toLowerCase().includes(kw)
     )
   }
+
+  // Recomputed rather than snapshotted at module load, so a tag introduced by
+  // content created during this session shows up in the filter.
+  const allTags = useMemo(
+    () => Array.from(new Set(allContent.flatMap(c => c.tags.map(t => t.name)))).sort(),
+    [createdTick]
+  )
 
   const folders = useMemo(() => uniqueValues(items.map(item => item.folder)), [items])
   const series = useMemo(() => uniqueValues(items.map(item => item.series)), [items])
@@ -206,9 +209,18 @@ export default function ContentListPage() {
                 />
               </div>
             )}
-            <div className="mt-3 flex items-center justify-between gap-4">
-              <p className="text-xs text-[color:var(--muted-foreground)]">
-                快速输入默认创建原创；摘录可补充作者、作品、链接、页码或时间点。
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+              <p className="text-xs leading-6 text-[color:var(--muted-foreground)]">
+                快速输入默认创建原创，保存后为私密。
+                {quickThoughtType === 'excerpt' && (
+                  <>
+                    {' '}摘录在这里只填作者和作品；
+                    <Link to="/new/thought" className="text-[color:var(--primary)] hover:underline">
+                      完整创建页
+                    </Link>
+                    {' '}可补充来源类型、链接、页码或时间点。
+                  </>
+                )}
               </p>
               <button type="submit" className="life-button life-button-primary text-sm">
                 保存随想
@@ -280,7 +292,7 @@ export default function ContentListPage() {
             className="life-input px-3 py-1.5 text-xs"
           >
             <option value="">所有标签</option>
-            {ALL_TAGS.map(tag => (
+            {allTags.map(tag => (
               <option key={tag} value={tag}>#{tag}</option>
             ))}
           </select>

@@ -88,6 +88,14 @@
 
 ## 开发
 
+本项目使用 **pnpm**（仓库内有 `pnpm-lock.yaml`，`package.json` 已声明
+`packageManager` 字段）。没有全局 pnpm 时可以用 Node 自带的 corepack：
+
+```bash
+corepack enable          # 之后可直接使用 pnpm
+# 或不启用，直接前缀调用：corepack pnpm <命令>
+```
+
 ```bash
 pnpm install
 pnpm dev        # 开发服务器，默认 $PORT 或 8443
@@ -96,6 +104,10 @@ pnpm preview    # 预览构建产物
 pnpm test       # 运行单元测试（vitest）
 pnpm test:watch # 监听模式
 ```
+
+**关于 npm**：`npm test` / `npm run build` 等*运行脚本*没有问题（已验证结果一致）。
+但不要用 `npm install` 安装依赖——那会生成与 `pnpm-lock.yaml` 竞争的
+`package-lock.json`，两份锁文件容易解析出不同版本。安装请统一用 pnpm。
 
 ### 测试
 
