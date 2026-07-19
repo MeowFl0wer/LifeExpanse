@@ -4,7 +4,14 @@ import VisibilityBadge from '../components/VisibilityBadge'
 import MediaInsertMenu from '../components/MediaInsertMenu'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import { getCurrentUser } from '../auth'
-import type { ContentKind, ThoughtType, ThoughtSourceType, Visibility } from '../types'
+import { addContentItem, addTrajectoryEntry, recordFootprintVisit } from '../mockData'
+import type { ContentItem, ContentKind, ContentType, ThoughtType, ThoughtSourceType, Visibility } from '../types'
+
+/** Slug from the title where possible; CJK titles fall back to a timestamp. */
+function makeSlug(title: string): string {
+  const ascii = title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  return ascii || `entry-${Date.now()}`
+}
 
 type CreateType = 'thought' | 'diary' | 'note' | 'article' | 'trajectory'
 type Tab = 'write' | 'preview'
@@ -105,16 +112,78 @@ export default function ContentCreatePage() {
     }
 
     setSaving(true)
-    await new Promise(r => setTimeout(r, 800))
-    setSaving(false)
+    await new Promise(r => setTimeout(r, 600))
 
-    alert(
-      `前端原型：已创建一条${config.label}。\n\n` +
-      `保存成功后会退出创建模式，回到只读展示页。\n` +
-      (createType === 'trajectory' && trajWriteToMap ? '当天城市也会写入足迹地图。\n' : '') +
-      `\n实际保存需要真实后端支持。`
-    )
-    navigate(createType === 'trajectory' ? `/${currentUser}/trajectory` : `/${currentUser}/${config.section}`)
+    const now = new Date().toISOString()
+    const tags = tagInput
+      .split(/[,，]/)
+      .map(t => t.trim())
+      .filter(Boolean)
+      .map((name, i) => ({ id: `tag-${Date.now()}-${i}`, name }))
+
+    if (createType === 'trajectory') {
+      addTrajectoryEntry({
+        id: `tr-${Date.now()}`,
+        date: trajDate,
+        city: trajCity.trim(),
+        country: trajCountry.trim() || '—',
+        summary: title.trim() || body.trim().slice(0, 40),
+        tags,
+      })
+
+      let onMap = false
+      if (trajWriteToMap) {
+        onMap = recordFootprintVisit(trajCity.trim(), trajCountry.trim(), trajDate)
+      }
+
+      setSaving(false)
+      alert(
+        `已创建 1 条人生轨迹记录。` +
+        (trajWriteToMap
+          ? onMap
+            ? '\n\n当天城市已写入足迹地图。'
+            : '\n\n该城市暂无坐标，已加入足迹列表并标记为待确认，不会出现在地图上。'
+          : '')
+      )
+      navigate(`/${currentUser}/trajectory`)
+      return
+    }
+
+    const type: ContentType = createType === 'thought' ? 'thought' : createType === 'diary' ? 'diary' : 'pkm'
+    const slug = makeSlug(title || body.slice(0, 30))
+    const item: ContentItem = {
+      id: `c-${Date.now()}`,
+      slug,
+      type,
+      title: title.trim() || body.trim().slice(0, 30),
+      body: body.trim(),
+      summary: body.trim().slice(0, 60),
+      visibility,
+      tags,
+      createdAt: now,
+      updatedAt: now,
+      publishedAt: visibility === 'draft' ? '' : now,
+      author: currentUser!,
+      ...(type === 'pkm' ? { contentKind, allowComments: contentKind === 'article' } : {}),
+      ...(type === 'thought'
+        ? {
+            thoughtType,
+            ...(thoughtType === 'excerpt'
+              ? {
+                  sourceAuthor: sourceAuthor.trim() || undefined,
+                  sourceTitle: sourceTitle.trim() || undefined,
+                  sourceType,
+                  sourceUrl: sourceUrl.trim() || undefined,
+                  sourceLocator: sourceLocator.trim() || undefined,
+                }
+              : {}),
+          }
+        : {}),
+    }
+
+    addContentItem(item)
+    setSaving(false)
+    navigate(`/${currentUser}/${config.section}/${slug}`)
   }
 
   return (

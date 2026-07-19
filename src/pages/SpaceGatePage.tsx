@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
@@ -18,8 +18,28 @@ export default function SpaceGatePage() {
   const [checking, setChecking] = useState(false)
   const [attempts, setAttempts] = useState(0)
   const [lockedUntil, setLockedUntil] = useState(0)
+  const [remaining, setRemaining] = useState(0)
 
-  const locked = lockedUntil > Date.now()
+  // Without a ticking timer nothing re-renders when the lock expires, so the
+  // form would stay disabled long after the lockout was actually over.
+  useEffect(() => {
+    if (lockedUntil === 0) return
+
+    function tick() {
+      const left = Math.max(0, Math.ceil((lockedUntil - Date.now()) / 1000))
+      setRemaining(left)
+      if (left === 0) {
+        setLockedUntil(0)
+        setError('')
+      }
+    }
+
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timer)
+  }, [lockedUntil])
+
+  const locked = remaining > 0
   const ownedSpaces = encryptedSpaces.filter(s => s.owner === username)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -44,7 +64,6 @@ export default function SpaceGatePage() {
       if (next >= MAX_ATTEMPTS) {
         setLockedUntil(Date.now() + LOCK_SECONDS * 1000)
         setAttempts(0)
-        setError(`验证失败次数过多，请 ${LOCK_SECONDS} 秒后再试。`)
       } else {
         setError('验证失败，请检查密码后重试。')
       }
@@ -84,16 +103,20 @@ export default function SpaceGatePage() {
               className="life-input w-full px-4 py-3 text-center text-sm disabled:opacity-50"
             />
 
-            {error && (
+            {locked ? (
+              <p className="mt-3 text-center text-xs text-[#B23B3B]">
+                验证失败次数过多，请 {remaining} 秒后再试。
+              </p>
+            ) : error ? (
               <p className="mt-3 text-center text-xs text-[#B23B3B]">{error}</p>
-            )}
+            ) : null}
 
             <button
               type="submit"
               disabled={checking || locked}
               className="life-button life-button-primary mt-4 w-full text-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {checking ? '验证中...' : locked ? '已临时锁定' : '进入'}
+              {checking ? '验证中...' : locked ? `已锁定 ${remaining}s` : '进入'}
             </button>
           </form>
 

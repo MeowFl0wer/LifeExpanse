@@ -4,7 +4,7 @@ import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import TagList from '../components/TagList'
 import BatchTrajectoryForm from '../components/BatchTrajectoryForm'
-import { trajectoryEntries, generateHeatmapData, addTrajectoryEntry } from '../mockData'
+import { trajectoryEntries, generateHeatmapData, addTrajectoryEntry, recordFootprintVisit } from '../mockData'
 import type { TrajectoryEntry } from '../types'
 import { isOwnerOf } from '../auth'
 
@@ -89,11 +89,11 @@ export default function TrajectoryPage() {
 
   const cities = useMemo(
     () => Array.from(new Set(trajectoryEntries.map(e => e.city))).sort(),
-    []
+    [batchTick]
   )
   const tags = useMemo(
     () => Array.from(new Set(trajectoryEntries.flatMap(e => e.tags.map(t => t.name)))).sort(),
-    []
+    [batchTick]
   )
 
   const filteredEntries = useMemo(() => {
@@ -168,11 +168,23 @@ export default function TrajectoryPage() {
       })
     }
 
+    // Ch 12.4: each selected date produces its own footprint visit.
+    let onMap = false
+    if (data.writeToMap) {
+      for (const date of dates) {
+        onMap = recordFootprintVisit(data.city, data.country, date) || onMap
+      }
+    }
+
     setBatchTick(t => t + 1)
     setShowBatch(false)
     alert(
       `已创建 ${dates.length} 条轨迹记录，使用同一个 batch_id 关联。\n\n` +
-      (data.writeToMap ? '每个日期也已分别生成足迹到访记录。\n\n' : '') +
+      (data.writeToMap
+        ? onMap
+          ? `已为每个日期分别生成足迹到访记录，${data.city} 的到访次数 +${dates.length}。\n\n`
+          : `${data.city} 暂无坐标，已加入足迹列表并标记为待确认，不会出现在地图上。\n\n`
+        : '') +
       '后续编辑时可以选择「只修改当前日期」或「修改本批次全部记录」。'
     )
   }

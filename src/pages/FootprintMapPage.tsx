@@ -3,20 +3,11 @@ import { useParams } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import WorldMap from '../components/WorldMap'
-import { footprintCities, addTrajectoryEntry } from '../mockData'
+import { footprintCities, addTrajectoryEntry, CITY_COORDS } from '../mockData'
 import type { FootprintCity } from '../types'
 import { isOwnerOf } from '../auth'
 
 type SortKey = 'visitCount' | 'lastVisit' | 'city'
-
-const KNOWN_CITY_COORDS: Record<string, { lat: number; lng: number; country: string }> = {
-  纽约: { lat: 40.7128, lng: -74.0060, country: '美国' },
-  悉尼: { lat: -33.8688, lng: 151.2093, country: '澳大利亚' },
-  柏林: { lat: 52.5200, lng: 13.4050, country: '德国' },
-  曼谷: { lat: 13.7563, lng: 100.5018, country: '泰国' },
-  香港: { lat: 22.3193, lng: 114.1694, country: '中国' },
-  台北: { lat: 25.0330, lng: 121.5654, country: '中国' },
-}
 
 function SectionTitle({ title, desc }: { title: string; desc?: string }) {
   return (
@@ -84,7 +75,7 @@ export default function FootprintMapPage() {
       setFormMsg(`「${city}」已有到访记录，建议合并到已有城市而不是新增（前端原型暂不支持自动合并）。`)
       return
     }
-    const matched = KNOWN_CITY_COORDS[city]
+    const matched = CITY_COORDS[city]
     const newCity: FootprintCity = {
       id: `fp-${Date.now()}`,
       city,

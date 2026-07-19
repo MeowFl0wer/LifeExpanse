@@ -331,6 +331,65 @@ export function addTrajectoryEntry(entry: TrajectoryEntry): void {
   trajectoryEntries.push(entry)
 }
 
+/**
+ * City centre coordinates used to place a newly recorded city on the map.
+ * A city that is not in this table is stored with `pending: true` and kept off
+ * the map rather than being guessed at a wrong location (Ch 13.3).
+ */
+export const CITY_COORDS: Record<string, { lat: number; lng: number; country: string }> = {
+  北京: { lat: 39.9042, lng: 116.4074, country: '中国' },
+  上海: { lat: 31.2304, lng: 121.4737, country: '中国' },
+  香港: { lat: 22.3193, lng: 114.1694, country: '中国' },
+  台北: { lat: 25.0330, lng: 121.5654, country: '中国' },
+  东京: { lat: 35.6762, lng: 139.6503, country: '日本' },
+  大阪: { lat: 34.6937, lng: 135.5023, country: '日本' },
+  首尔: { lat: 37.5665, lng: 126.9780, country: '韩国' },
+  新加坡: { lat: 1.3521, lng: 103.8198, country: '新加坡' },
+  曼谷: { lat: 13.7563, lng: 100.5018, country: '泰国' },
+  伦敦: { lat: 51.5074, lng: -0.1278, country: '英国' },
+  巴黎: { lat: 48.8566, lng: 2.3522, country: '法国' },
+  柏林: { lat: 52.5200, lng: 13.4050, country: '德国' },
+  纽约: { lat: 40.7128, lng: -74.0060, country: '美国' },
+  悉尼: { lat: -33.8688, lng: 151.2093, country: '澳大利亚' },
+}
+
+/**
+ * Records a city-level visit, merging into an existing city when one matches
+ * so repeated visits bump the counter instead of creating duplicate rows.
+ * Returns true when the city landed on the map (i.e. coordinates were known).
+ */
+export function recordFootprintVisit(city: string, country: string, date: string): boolean {
+  const name = city.trim()
+  if (!name) return false
+
+  const existing = footprintCities.find(c => c.city === name)
+  if (existing) {
+    existing.visitCount += 1
+    if (date && date < existing.firstVisit) existing.firstVisit = date
+    if (date && date > existing.lastVisit) existing.lastVisit = date
+    return !existing.pending
+  }
+
+  const matched = CITY_COORDS[name]
+  footprintCities.push({
+    id: `fp-${name}-${Date.now()}`,
+    city: name,
+    country: country.trim() || matched?.country || '—',
+    lat: matched?.lat ?? 0,
+    lng: matched?.lng ?? 0,
+    firstVisit: date,
+    lastVisit: date,
+    visitCount: 1,
+    pending: !matched,
+  })
+  return Boolean(matched)
+}
+
+/** Appends a newly created item so it shows up in lists, search and detail pages. */
+export function addContentItem(item: ContentItem): void {
+  allContent.push(item)
+}
+
 export const footprintCities: FootprintCity[] = [
   { id: 'fp1', city: '北京', country: '中国', lat: 39.9042, lng: 116.4074, firstVisit: '2018-01-01', lastVisit: '2024-11-20', visitCount: 42 },
   { id: 'fp2', city: '伦敦', country: '英国', lat: 51.5074, lng: -0.1278, firstVisit: '2019-08-10', lastVisit: '2024-11-01', visitCount: 7 },

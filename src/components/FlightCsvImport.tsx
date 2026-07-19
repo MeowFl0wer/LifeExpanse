@@ -24,9 +24,55 @@ const STATUS_MAP: Record<string, FlightRecord['status']> = {
   取消: 'cancelled', 退票: 'cancelled', cancelled: 'cancelled',
 }
 
-/** Minimal CSV split — good enough for the simple, quoted-field-free template. */
-function splitCsvLine(line: string): string[] {
-  return line.split(',').map(c => c.trim())
+/**
+ * Splits CSV text into rows of fields, honouring RFC 4180 quoting: fields may
+ * be double-quoted, quoted fields may contain commas and newlines, and `""`
+ * inside a quoted field is a literal quote.
+ */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let field = ''
+  let inQuotes = false
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[i + 1] === '"') {
+          field += '"'
+          i++
+        } else {
+          inQuotes = false
+        }
+      } else {
+        field += char
+      }
+      continue
+    }
+
+    if (char === '"') {
+      inQuotes = true
+    } else if (char === ',') {
+      row.push(field.trim())
+      field = ''
+    } else if (char === '\n' || char === '\r') {
+      // Swallow the \n of a \r\n pair.
+      if (char === '\r' && text[i + 1] === '\n') i++
+      row.push(field.trim())
+      field = ''
+      if (row.some(c => c !== '')) rows.push(row)
+      row = []
+    } else {
+      field += char
+    }
+  }
+
+  row.push(field.trim())
+  if (row.some(c => c !== '')) rows.push(row)
+
+  return rows
 }
 
 export default function FlightCsvImport({ existing, knownAirports, onClose, onImport }: FlightCsvImportProps) {
@@ -35,17 +81,15 @@ export default function FlightCsvImport({ existing, knownAirports, onClose, onIm
   const fileRef = useRef<HTMLInputElement>(null)
 
   function parse(text: string): ParsedRow[] {
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-    if (lines.length === 0) return []
+    const allRows = parseCsv(text)
+    if (allRows.length === 0) return []
 
     // Drop a header row if the first cell clearly isn't a date.
-    const first = splitCsvLine(lines[0]!)
-    const body = /^\d{4}-\d{2}-\d{2}$/.test(first[0] ?? '') ? lines : lines.slice(1)
+    const body = /^\d{4}-\d{2}-\d{2}$/.test(allRows[0]?.[0] ?? '') ? allRows : allRows.slice(1)
 
     const seenInFile = new Set<string>()
 
-    return body.map(line => {
-      const cells = splitCsvLine(line)
+    return body.map(cells => {
       const [date, airline, flightNo, from, to, distance, duration, status] = cells
 
       if (!date || !flightNo || !from || !to) {

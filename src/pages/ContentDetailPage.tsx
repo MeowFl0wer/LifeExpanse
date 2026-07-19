@@ -52,7 +52,10 @@ export default function ContentDetailPage() {
   const item = getContentBySlug(slug ?? '')
   const [localContentKind, setLocalContentKind] = useState(item?.contentKind)
 
-  if (!item) {
+  // Private and draft content must be unreachable by anyone but its author —
+  // including by guessing the slug. Returning the same 404 as a missing item
+  // avoids leaking the fact that the content exists at all.
+  if (!item || (item.visibility !== 'public' && !isOwnerOf(item.author))) {
     return (
       <div className="life-page flex min-h-screen flex-col">
         <PublicHeader />
