@@ -1,15 +1,23 @@
-import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import ContentCard from '../components/ContentCard'
+import LibraryCover from '../components/LibraryCover'
+import LibraryItemForm, { type LibraryItemDraft } from '../components/LibraryItemForm'
+import TagFilterStrip from '../components/TagFilterStrip'
 import { visibilityConfig } from '../components/VisibilityBadge'
-import { allContent, addContentItem, makeUniqueSlug } from '../mockData'
-import type { ContentItem, ThoughtType, Visibility } from '../types'
-import { useIsOwnerOf } from '../auth'
+import {
+  allContent, addContentItem, makeUniqueSlug,
+  folders as allFolders, series as allSeries,
+  addFolder, addSeries, updateFolder, getFolder, getSeries,
+} from '../mockData'
+import { itemsInFolder, foldersInSeries, looseItemsInSeries, allItemsInSeries } from '../lib/library'
+import type { ContentItem, Folder, Series, ThoughtType, Visibility } from '../types'
+import { useIsOwnerOf, useCurrentUser } from '../auth'
 
 type ContentSection = 'thoughts' | 'diary' | 'pkm'
-type PkmView = 'all' | 'notes' | 'articles' | 'drafts' | 'folders' | 'tags' | 'series'
+type PkmView = 'all' | 'notes' | 'articles' | 'drafts' | 'folders' | 'series'
 type ThoughtFilter = 'all' | ThoughtType
 
 const sectionConfig: Record<ContentSection, { label: string }> = {
@@ -24,18 +32,12 @@ const pkmViews: { key: PkmView; label: string }[] = [
   { key: 'articles', label: 'Articles' },
   { key: 'drafts', label: 'Drafts' },
   { key: 'folders', label: 'Folders' },
-  { key: 'tags', label: 'Tags' },
   { key: 'series', label: 'Series' },
 ]
 
 const sourceTypeLabels = {
-  book: '书籍',
-  article: '文章',
-  video: '视频',
-  podcast: '播客',
-  speech: '演讲',
-  webpage: '网页',
-  other: '其他',
+  book: '书籍', article: '文章', video: '视频', podcast: '播客',
+  speech: '演讲', webpage: '网页', other: '其他',
 }
 
 function matchesSection(item: ContentItem, section: ContentSection) {
@@ -44,12 +46,10 @@ function matchesSection(item: ContentItem, section: ContentSection) {
   return item.type === 'diary'
 }
 
-/** Distinct values with how many items carry each, for the facet chips. */
-function facetCounts(values: (string | undefined)[]): { name: string; count: number }[] {
+function tagFacets(items: readonly ContentItem[]): { name: string; count: number }[] {
   const counts = new Map<string, number>()
-  for (const value of values) {
-    if (!value) continue
-    counts.set(value, (counts.get(value) ?? 0) + 1)
+  for (const item of items) {
+    for (const tag of item.tags) counts.set(tag.name, (counts.get(tag.name) ?? 0) + 1)
   }
   return Array.from(counts, ([name, count]) => ({ name, count })).sort((a, b) =>
     a.name.localeCompare(b.name, 'zh-CN')
@@ -62,11 +62,15 @@ interface ContentListPageProps {
 
 export default function ContentListPage({ section }: ContentListPageProps) {
   const { username } = useParams<{ username: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const currentUser = useCurrentUser()
+  const isOwner = useIsOwnerOf(username)
   const sec = section
   const config = sectionConfig[sec]
 
   const [filterVisibility, setFilterVisibility] = useState<Visibility | 'all'>('all')
-  const [filterTag, setFilterTag] = useState('')
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [filterKeyword, setFilterKeyword] = useState('')
   const [pkmView, setPkmView] = useState<PkmView>('all')
   const [thoughtFilter, setThoughtFilter] = useState<ThoughtFilter>('all')
@@ -74,15 +78,28 @@ export default function ContentListPage({ section }: ContentListPageProps) {
   const [quickText, setQuickText] = useState('')
   const [quickSourceTitle, setQuickSourceTitle] = useState('')
   const [quickSourceAuthor, setQuickSourceAuthor] = useState('')
-  const [createdTick, setCreatedTick] = useState(0)
-  const [folderFilter, setFolderFilter] = useState('')
-  const [seriesFilter, setSeriesFilter] = useState('')
+  const [showFolderForm, setShowFolderForm] = useState(false)
+  const [showSeriesForm, setShowSeriesForm] = useState(false)
+  const [editingFolder, setEditingFolder] = useState(false)
+  // Library and content live in a module-level mock store; this re-reads it.
+  const [, bumpStore] = useState(0)
 
-  const isOwner = useIsOwnerOf(username)
+  // Drill-in lives in the URL so back/forward work.
+  const openFolder = getFolder(searchParams.get('folder') ?? '')
+  const openSeries = getSeries(searchParams.get('series') ?? '')
 
-  // Everything this viewer is allowed to see in this section. Facet lists are
-  // derived from this, not from the filtered result, so choosing one folder
-  // doesn't make every other folder disappear from the list.
+  function setDrill(next: { folder?: string; series?: string }) {
+    const params = new URLSearchParams()
+    if (next.folder) params.set('folder', next.folder)
+    if (next.series) params.set('series', next.series)
+    setSearchParams(params)
+    setEditingFolder(false)
+  }
+
+  const ownFolders = allFolders.filter(f => f.owner === username)
+  const ownSeries = allSeries.filter(s => s.owner === username)
+
+  // Everything this viewer may see in this section.
   const baseItems = allContent.filter(c => {
     if (!matchesSection(c, sec)) return false
     if (c.author !== username) return false
@@ -90,52 +107,46 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     return true
   })
 
-  let items = baseItems
+  function applyCommonFilters(list: ContentItem[]): ContentItem[] {
+    let out = list
+    if (filterVisibility !== 'all') out = out.filter(c => c.visibility === filterVisibility)
+    // Multi-select is a union: any selected tag matches.
+    if (selectedTags.length > 0) {
+      out = out.filter(c => c.tags.some(t => selectedTags.includes(t.name)))
+    }
+    if (filterKeyword) {
+      const kw = filterKeyword.toLowerCase()
+      out = out.filter(c =>
+        c.title.toLowerCase().includes(kw) || c.summary.toLowerCase().includes(kw)
+      )
+    }
+    return out
+  }
 
+  let items = baseItems
   if (sec === 'pkm') {
     if (pkmView === 'notes') items = items.filter(c => c.contentKind === 'note')
     if (pkmView === 'articles') items = items.filter(c => c.contentKind === 'article')
     if (pkmView === 'drafts') items = items.filter(c => c.visibility === 'draft')
-    if (folderFilter) items = items.filter(c => c.folder === folderFilter)
-    if (seriesFilter) items = items.filter(c => c.series === seriesFilter)
   }
-
   if (sec === 'thoughts' && thoughtFilter !== 'all') {
     items = items.filter(c => c.thoughtType === thoughtFilter)
   }
+  items = applyCommonFilters(items)
 
-  if (filterVisibility !== 'all') {
-    items = items.filter(c => c.visibility === filterVisibility)
-  }
-  if (filterTag) {
-    items = items.filter(c => c.tags.some(t => t.name === filterTag))
-  }
-  if (filterKeyword) {
-    const kw = filterKeyword.toLowerCase()
-    items = items.filter(c =>
-      c.title.toLowerCase().includes(kw) || c.summary.toLowerCase().includes(kw)
-    )
-  }
-
-  // Recomputed rather than snapshotted at module load, so a tag introduced by
-  // content created during this session shows up in the filter.
-  const allTags = useMemo(
-    () => Array.from(new Set(allContent.flatMap(c => c.tags.map(t => t.name)))).sort(),
-    [createdTick]
-  )
-
+  const facets = tagFacets(baseItems)
   const hasFilters =
-    filterVisibility !== 'all' ||
-    filterTag !== '' ||
-    filterKeyword !== '' ||
-    folderFilter !== '' ||
-    seriesFilter !== '' ||
-    (sec === 'pkm' && pkmView !== 'all') ||
+    filterVisibility !== 'all' || selectedTags.length > 0 || filterKeyword !== '' ||
+    (sec === 'pkm' && pkmView !== 'all' && pkmView !== 'folders' && pkmView !== 'series') ||
     (sec === 'thoughts' && thoughtFilter !== 'all')
 
-  const folderFacets = facetCounts(baseItems.map(item => item.folder))
-  const seriesFacets = facetCounts(baseItems.map(item => item.series))
-  const tagFacets = facetCounts(baseItems.flatMap(item => item.tags.map(tag => tag.name)))
+  const browsingLibrary = sec === 'pkm' && (pkmView === 'folders' || pkmView === 'series')
+
+  /** New content: a guest is sent through login and returned here afterwards. */
+  function handleNew() {
+    const target = sec === 'pkm' ? '/new/note' : sec === 'diary' ? '/new/diary' : '/new/thought'
+    navigate(currentUser ? target : `/login?next=${encodeURIComponent(target)}`)
+  }
 
   function handleQuickThoughtSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -144,7 +155,6 @@ export default function ContentListPage({ section }: ContentListPageProps) {
       alert('请先写下一段随想')
       return
     }
-
     const now = new Date().toISOString()
     addContentItem({
       id: `c-${Date.now()}`,
@@ -156,7 +166,6 @@ export default function ContentListPage({ section }: ContentListPageProps) {
         ? `> ${text}${quickSourceAuthor.trim() ? `\n\n作者或说话者：${quickSourceAuthor.trim()}` : ''}${quickSourceTitle.trim() ? `\n\n作品：${quickSourceTitle.trim()}` : ''}`
         : text,
       summary: text.slice(0, 60),
-      // Quick capture defaults to private; visibility is changed explicitly later.
       visibility: 'private',
       tags: [],
       createdAt: now,
@@ -170,12 +179,38 @@ export default function ContentListPage({ section }: ContentListPageProps) {
           }
         : {}),
     })
-
     setQuickText('')
     setQuickSourceTitle('')
     setQuickSourceAuthor('')
     setQuickThoughtType('original')
-    setCreatedTick(t => t + 1)
+    bumpStore(n => n + 1)
+  }
+
+  function handleCreateFolder(draft: LibraryItemDraft) {
+    addFolder({
+      id: `fd-${Date.now()}`,
+      owner: username ?? 'euan',
+      name: draft.name,
+      description: draft.description,
+      cover: draft.cover,
+      seriesId: draft.seriesId,
+      createdAt: new Date().toISOString(),
+    })
+    setShowFolderForm(false)
+    bumpStore(n => n + 1)
+  }
+
+  function handleCreateSeries(draft: LibraryItemDraft) {
+    addSeries({
+      id: `sr-${Date.now()}`,
+      owner: username ?? 'euan',
+      name: draft.name,
+      description: draft.description,
+      cover: draft.cover,
+      createdAt: new Date().toISOString(),
+    })
+    setShowSeriesForm(false)
+    bumpStore(n => n + 1)
   }
 
   return (
@@ -183,20 +218,25 @@ export default function ContentListPage({ section }: ContentListPageProps) {
       <PublicHeader />
 
       <main className="life-shell flex-1 py-12">
-        <div className="mb-10 border-b border-[color:var(--border)] pb-8">
-          <div className="mb-2 flex items-baseline gap-3">
-            <h1 className="text-3xl font-light text-[color:var(--foreground)]">
-              {config.label}
-            </h1>
-            <span className="text-sm text-[color:var(--muted-foreground)]">
-              @{username}
-            </span>
+        <div className="mb-10 flex flex-wrap items-end justify-between gap-4 border-b border-[color:var(--border)] pb-8">
+          <div>
+            <div className="mb-2 flex items-baseline gap-3">
+              <h1 className="text-3xl font-light text-[color:var(--foreground)]">{config.label}</h1>
+              <span className="text-sm text-[color:var(--muted-foreground)]">@{username}</span>
+            </div>
+            <p className="text-sm text-[color:var(--muted-foreground)]">
+              {browsingLibrary
+                ? `${ownFolders.length} 个文件夹 · ${ownSeries.length} 个系列`
+                : `${items.length} 条${config.label}`}
+            </p>
           </div>
-          <p className="text-sm text-[color:var(--muted-foreground)]">
-            {items.length} 条{config.label}
-          </p>
+
+          <button type="button" onClick={handleNew} className="life-button life-button-primary text-sm">
+            + 新建
+          </button>
         </div>
 
+        {/* Quick capture (thoughts, owner only) */}
         {sec === 'thoughts' && isOwner && (
           <form onSubmit={handleQuickThoughtSubmit} className="mb-10 border-b border-[color:var(--border)] pb-8">
             <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -244,34 +284,24 @@ export default function ContentListPage({ section }: ContentListPageProps) {
                 {quickThoughtType === 'excerpt' && (
                   <>
                     {' '}摘录在这里只填作者和作品；
-                    <Link to="/new/thought" className="text-[color:var(--primary)] hover:underline">
-                      完整创建页
-                    </Link>
+                    <Link to="/new/thought" className="text-[color:var(--primary)] hover:underline">完整创建页</Link>
                     {' '}可补充来源类型、链接、页码或时间点。
                   </>
                 )}
               </p>
-              <button type="submit" className="life-button life-button-primary text-sm">
-                保存随想
-              </button>
+              <button type="submit" className="life-button life-button-primary text-sm">保存随想</button>
             </div>
           </form>
         )}
 
+        {/* View tabs */}
         {sec === 'pkm' && (
-          <div className="mb-7 flex flex-wrap gap-2">
+          <div className="mb-5 flex flex-wrap gap-2">
             {pkmViews.map(view => (
               <button
                 key={view.key}
                 type="button"
-                onClick={() => {
-                  setPkmView(view.key)
-                  // A folder/series filter left over from another view would
-                  // silently hide results here.
-                  setFolderFilter('')
-                  setSeriesFilter('')
-                  if (view.key !== 'tags') setFilterTag('')
-                }}
+                onClick={() => { setPkmView(view.key); setDrill({}) }}
                 className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
                   pkmView === view.key
                     ? 'border-[color:var(--primary)] bg-[#EEF8F0] text-[color:var(--primary)]'
@@ -285,7 +315,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
         )}
 
         {sec === 'thoughts' && (
-          <div className="mb-7 flex flex-wrap gap-2">
+          <div className="mb-5 flex flex-wrap gap-2">
             {(['all', 'original', 'excerpt'] as ThoughtFilter[]).map(type => (
               <button
                 key={type}
@@ -303,15 +333,15 @@ export default function ContentListPage({ section }: ContentListPageProps) {
           </div>
         )}
 
-        <div className="mb-6 flex flex-wrap gap-3">
+        {/* Filters */}
+        <div className="mb-6 flex flex-wrap items-center gap-3">
           {isOwner && (
             <div className="flex items-center gap-2">
               {(['all', 'public', 'private', 'draft'] as const).map(v => {
                 const active = filterVisibility === v
-                const activeClasses =
-                  v === 'all'
-                    ? 'border-[color:var(--primary)] bg-[#EEF8F0] text-[color:var(--primary)]'
-                    : visibilityConfig[v].classes
+                const activeClasses = v === 'all'
+                  ? 'border-[color:var(--primary)] bg-[#EEF8F0] text-[color:var(--primary)]'
+                  : visibilityConfig[v].classes
                 return (
                   <button
                     key={v}
@@ -330,17 +360,6 @@ export default function ContentListPage({ section }: ContentListPageProps) {
             </div>
           )}
 
-          <select
-            value={filterTag}
-            onChange={e => setFilterTag(e.target.value)}
-            className="life-input px-3 py-1.5 text-xs"
-          >
-            <option value="">所有标签</option>
-            {allTags.map(tag => (
-              <option key={tag} value={tag}>#{tag}</option>
-            ))}
-          </select>
-
           <div className="relative">
             <input
               type="text"
@@ -349,122 +368,340 @@ export default function ContentListPage({ section }: ContentListPageProps) {
               placeholder="关键词搜索..."
               className="life-input w-44 py-1.5 pl-8 pr-3 text-xs sm:w-60"
             />
-            <svg
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]"
-              width="12"
-              height="12"
-              viewBox="0 0 12 12"
-              fill="none"
-            >
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]"
+              width="12" height="12" viewBox="0 0 12 12" fill="none">
               <circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1.2" />
               <line x1="7.5" y1="7.5" x2="10" y2="10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
             </svg>
           </div>
         </div>
 
-        {sec === 'pkm' && (pkmView === 'folders' || pkmView === 'tags' || pkmView === 'series') && (
-          <div className="mb-6">
-            {(() => {
-              const facets =
-                pkmView === 'folders' ? folderFacets : pkmView === 'tags' ? tagFacets : seriesFacets
-              const selected =
-                pkmView === 'folders' ? folderFilter : pkmView === 'tags' ? filterTag : seriesFilter
-              const select = (name: string) => {
-                if (pkmView === 'folders') setFolderFilter(name)
-                else if (pkmView === 'tags') setFilterTag(name)
-                else setSeriesFilter(name)
-              }
-              const emptyLabel =
-                pkmView === 'folders' ? '暂无文件夹' : pkmView === 'tags' ? '暂无标签' : '暂无系列'
+        <div className="mb-8">
+          <TagFilterStrip tags={facets} selected={selectedTags} onChange={setSelectedTags} />
+        </div>
 
-              if (facets.length === 0) {
-                return <p className="text-xs text-[color:var(--muted-foreground)]">{emptyLabel}</p>
-              }
-
-              return (
-                <>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => select('')}
-                      className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                        selected === ''
-                          ? 'border-[color:var(--primary)] bg-[#EEF8F0] text-[color:var(--primary)]'
-                          : 'border-[color:var(--border)] bg-white/70 text-[color:var(--muted-foreground)] hover:border-[color:var(--accent)]'
-                      }`}
-                    >
-                      全部
-                    </button>
-                    {facets.map(facet => {
-                      const active = selected === facet.name
-                      return (
-                        <button
-                          key={facet.name}
-                          type="button"
-                          onClick={() => select(active ? '' : facet.name)}
-                          className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                            active
-                              ? 'border-[color:var(--primary)] bg-[#EEF8F0] text-[color:var(--primary)]'
-                              : 'border-[color:var(--border)] bg-white/70 text-[color:var(--muted-foreground)] hover:border-[color:var(--accent)]'
-                          }`}
-                        >
-                          {pkmView === 'tags' ? `#${facet.name}` : facet.name}
-                          <span className="ml-1.5 opacity-60">{facet.count}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                  {selected && (
-                    <p className="mt-3 text-xs text-[color:var(--muted-foreground)]">
-                      正在按
-                      {pkmView === 'folders' ? '文件夹' : pkmView === 'tags' ? '标签' : '系列'}
-                      「{pkmView === 'tags' ? `#${selected}` : selected}」筛选，共 {items.length} 条。
-                      <button
-                        type="button"
-                        onClick={() => select('')}
-                        className="ml-2 text-[color:var(--primary)] hover:underline"
-                      >
-                        清除
-                      </button>
-                    </p>
-                  )}
-                </>
-              )
-            })()}
-          </div>
-        )}
-
-        {sec === 'thoughts' && items.some(item => item.thoughtType === 'excerpt') && (
-          <div className="mb-6 flex flex-wrap gap-2">
-            {items.filter(item => item.thoughtType === 'excerpt').map(item => (
-              <span key={item.id} className="rounded-full bg-[color:var(--secondary)] px-3 py-1 text-xs text-[color:var(--muted-foreground)]">
-                {item.sourceType ? sourceTypeLabels[item.sourceType] : '摘录'}
-                {item.sourceTitle ? ` · ${item.sourceTitle}` : ''}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {items.length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-sm text-[color:var(--muted-foreground)]">
-              {hasFilters
-                ? `没有符合条件的${config.label}`
-                : isOwner
-                  ? `还没有${config.label}`
-                  : `作者没有公开任何${config.label}哦～`}
-            </p>
-          </div>
+        {browsingLibrary ? (
+          <LibraryBrowser
+            view={pkmView === 'folders' ? 'folders' : 'series'}
+            isOwner={isOwner}
+            folders={ownFolders}
+            seriesList={ownSeries}
+            baseItems={baseItems}
+            applyFilters={applyCommonFilters}
+            openFolder={openFolder}
+            openSeries={openSeries}
+            onOpenFolder={id => setDrill({ folder: id })}
+            onOpenSeries={id => setDrill({ series: id })}
+            onBack={() => setDrill({})}
+            showFolderForm={showFolderForm}
+            showSeriesForm={showSeriesForm}
+            editingFolder={editingFolder}
+            onShowFolderForm={setShowFolderForm}
+            onShowSeriesForm={setShowSeriesForm}
+            onEditFolder={setEditingFolder}
+            onCreateFolder={handleCreateFolder}
+            onCreateSeries={handleCreateSeries}
+            onSaveFolder={(id, draft) => {
+              updateFolder(id, {
+                name: draft.name,
+                description: draft.description,
+                cover: draft.cover,
+                seriesId: draft.seriesId,
+              })
+              setEditingFolder(false)
+              bumpStore(n => n + 1)
+            }}
+          />
         ) : (
-          <div className="border-t border-[color:var(--border)]">
-            {items.map(item => (
-              <ContentCard key={item.id} item={item} showVisibility={isOwner} />
-            ))}
-          </div>
+          <>
+            {sec === 'thoughts' && items.some(item => item.thoughtType === 'excerpt') && (
+              <div className="mb-6 flex flex-wrap gap-2">
+                {items.filter(item => item.thoughtType === 'excerpt').map(item => (
+                  <span key={item.id} className="rounded-full bg-[color:var(--secondary)] px-3 py-1 text-xs text-[color:var(--muted-foreground)]">
+                    {item.sourceType ? sourceTypeLabels[item.sourceType] : '摘录'}
+                    {item.sourceTitle ? ` · ${item.sourceTitle}` : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {items.length === 0 ? (
+              <div className="py-16 text-center">
+                <p className="text-sm text-[color:var(--muted-foreground)]">
+                  {hasFilters
+                    ? `没有符合条件的${config.label}`
+                    : isOwner
+                      ? `还没有${config.label}`
+                      : `作者没有公开任何${config.label}哦～`}
+                </p>
+              </div>
+            ) : (
+              <div className="border-t border-[color:var(--border)]">
+                {items.map(item => (
+                  <ContentCard key={item.id} item={item} showVisibility={isOwner} />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </main>
 
       <Footer />
+    </div>
+  )
+}
+
+/* ---------------- Library browser ---------------- */
+
+interface LibraryBrowserProps {
+  view: 'folders' | 'series'
+  isOwner: boolean
+  folders: Folder[]
+  seriesList: Series[]
+  baseItems: ContentItem[]
+  applyFilters: (list: ContentItem[]) => ContentItem[]
+  openFolder?: Folder
+  openSeries?: Series
+  onOpenFolder: (id: string) => void
+  onOpenSeries: (id: string) => void
+  onBack: () => void
+  showFolderForm: boolean
+  showSeriesForm: boolean
+  editingFolder: boolean
+  onShowFolderForm: (v: boolean) => void
+  onShowSeriesForm: (v: boolean) => void
+  onEditFolder: (v: boolean) => void
+  onCreateFolder: (draft: LibraryItemDraft) => void
+  onCreateSeries: (draft: LibraryItemDraft) => void
+  onSaveFolder: (id: string, draft: LibraryItemDraft) => void
+}
+
+function LibraryBrowser({
+  view, isOwner, folders, seriesList, baseItems, applyFilters,
+  openFolder, openSeries, onOpenFolder, onOpenSeries, onBack,
+  showFolderForm, showSeriesForm, editingFolder,
+  onShowFolderForm, onShowSeriesForm, onEditFolder,
+  onCreateFolder, onCreateSeries, onSaveFolder,
+}: LibraryBrowserProps) {
+  /* ----- inside a folder ----- */
+  if (openFolder) {
+    const notes = applyFilters(itemsInFolder(baseItems, openFolder.id))
+    const parentSeries = seriesList.find(s => s.id === openFolder.seriesId)
+
+    return (
+      <section>
+        <button type="button" onClick={onBack} className="mb-5 text-sm text-[color:var(--muted-foreground)] hover:text-[color:var(--primary)]">
+          ← 返回文件夹
+        </button>
+
+        {editingFolder ? (
+          <LibraryItemForm
+            kind="folder"
+            seriesOptions={seriesList}
+            initial={{
+              name: openFolder.name,
+              description: openFolder.description ?? '',
+              cover: openFolder.cover,
+              seriesId: openFolder.seriesId,
+            }}
+            submitLabel="保存文件夹"
+            onCancel={() => onEditFolder(false)}
+            onSubmit={draft => onSaveFolder(openFolder.id, draft)}
+          />
+        ) : (
+          <div className="mb-8 flex flex-wrap items-start gap-5 border-b border-[color:var(--border)] pb-6">
+            <LibraryCover name={openFolder.name} kind="folder" cover={openFolder.cover} className="h-20 w-20 shrink-0" />
+            <div className="min-w-48 flex-1">
+              <h2 className="text-xl font-medium text-[color:var(--foreground)]">{openFolder.name}</h2>
+              {openFolder.description && (
+                <p className="mt-1 text-sm leading-6 text-[color:var(--muted-foreground)]">{openFolder.description}</p>
+              )}
+              <p className="mt-2 text-xs text-[color:var(--muted-foreground)]">
+                {notes.length} 条内容
+                {parentSeries && <> · 属于系列「{parentSeries.name}」</>}
+              </p>
+            </div>
+            {isOwner && (
+              <button type="button" onClick={() => onEditFolder(true)} className="life-button text-xs">
+                设置
+              </button>
+            )}
+          </div>
+        )}
+
+        {notes.length === 0 ? (
+          <p className="py-12 text-center text-sm text-[color:var(--muted-foreground)]">这个文件夹还没有内容。</p>
+        ) : (
+          <div className="border-t border-[color:var(--border)]">
+            {notes.map(item => <ContentCard key={item.id} item={item} showVisibility={isOwner} />)}
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  /* ----- inside a series ----- */
+  if (openSeries) {
+    const childFolders = foldersInSeries(folders, openSeries.id)
+    const loose = applyFilters(looseItemsInSeries(baseItems, openSeries.id))
+    const total = allItemsInSeries(baseItems, folders, openSeries.id).length
+
+    return (
+      <section>
+        <button type="button" onClick={onBack} className="mb-5 text-sm text-[color:var(--muted-foreground)] hover:text-[color:var(--primary)]">
+          ← 返回系列
+        </button>
+
+        <div className="mb-8 flex flex-wrap items-start gap-5 border-b border-[color:var(--border)] pb-6">
+          <LibraryCover name={openSeries.name} kind="series" cover={openSeries.cover} className="h-20 w-20 shrink-0" />
+          <div className="min-w-48 flex-1">
+            <h2 className="text-xl font-medium text-[color:var(--foreground)]">{openSeries.name}</h2>
+            {openSeries.description && (
+              <p className="mt-1 text-sm leading-6 text-[color:var(--muted-foreground)]">{openSeries.description}</p>
+            )}
+            <p className="mt-2 text-xs text-[color:var(--muted-foreground)]">
+              {childFolders.length} 个文件夹 · 共 {total} 条内容
+            </p>
+          </div>
+        </div>
+
+        {childFolders.length > 0 && (
+          <div className="mb-10">
+            <p className="life-kicker mb-3">文件夹</p>
+            <FolderGrid folders={childFolders} baseItems={baseItems} onOpen={onOpenFolder} />
+          </div>
+        )}
+
+        <div>
+          <p className="life-kicker mb-3">直接归入本系列的内容</p>
+          {loose.length === 0 ? (
+            <p className="py-8 text-center text-sm leading-6 text-[color:var(--muted-foreground)]">
+              没有直接归入本系列的内容。
+              <br />
+              文件夹里的笔记请从上面的文件夹进入。
+            </p>
+          ) : (
+            <div className="border-t border-[color:var(--border)]">
+              {loose.map(item => <ContentCard key={item.id} item={item} showVisibility={isOwner} />)}
+            </div>
+          )}
+        </div>
+      </section>
+    )
+  }
+
+  /* ----- folder index ----- */
+  if (view === 'folders') {
+    return (
+      <section>
+        {isOwner && (
+          showFolderForm ? (
+            <LibraryItemForm
+              kind="folder"
+              seriesOptions={seriesList}
+              submitLabel="新建文件夹"
+              onCancel={() => onShowFolderForm(false)}
+              onSubmit={onCreateFolder}
+            />
+          ) : (
+            <button type="button" onClick={() => onShowFolderForm(true)} className="life-button mb-6 text-sm">
+              + 新建文件夹
+            </button>
+          )
+        )}
+
+        {folders.length === 0 ? (
+          <p className="py-16 text-center text-sm text-[color:var(--muted-foreground)]">
+            {isOwner ? '还没有文件夹。' : '作者没有公开任何文件夹哦～'}
+          </p>
+        ) : (
+          <FolderGrid folders={folders} baseItems={baseItems} onOpen={onOpenFolder} />
+        )}
+      </section>
+    )
+  }
+
+  /* ----- series index ----- */
+  return (
+    <section>
+      {isOwner && (
+        showSeriesForm ? (
+          <LibraryItemForm
+            kind="series"
+            submitLabel="新建系列"
+            onCancel={() => onShowSeriesForm(false)}
+            onSubmit={onCreateSeries}
+          />
+        ) : (
+          <button type="button" onClick={() => onShowSeriesForm(true)} className="life-button mb-6 text-sm">
+            + 新建系列
+          </button>
+        )
+      )}
+
+      {seriesList.length === 0 ? (
+        <p className="py-16 text-center text-sm text-[color:var(--muted-foreground)]">
+          {isOwner ? '还没有系列。' : '作者没有公开任何系列哦～'}
+        </p>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {seriesList.map(s => {
+            const count = allItemsInSeries(baseItems, folders, s.id).length
+            const folderCount = foldersInSeries(folders, s.id).length
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => onOpenSeries(s.id)}
+                className="life-surface flex gap-4 p-4 text-left transition-colors hover:border-[color:var(--accent)]"
+              >
+                <LibraryCover name={s.name} kind="series" cover={s.cover} className="h-16 w-16 shrink-0" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-[color:var(--foreground)]">{s.name}</p>
+                  {s.description && (
+                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-[color:var(--muted-foreground)]">{s.description}</p>
+                  )}
+                  <p className="mt-2 text-xs text-[color:var(--muted-foreground)]">
+                    {folderCount} 个文件夹 · {count} 条内容
+                  </p>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function FolderGrid({
+  folders, baseItems, onOpen,
+}: {
+  folders: Folder[]
+  baseItems: ContentItem[]
+  onOpen: (id: string) => void
+}) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {folders.map(folder => (
+        <button
+          key={folder.id}
+          type="button"
+          onClick={() => onOpen(folder.id)}
+          className="life-surface flex gap-4 p-4 text-left transition-colors hover:border-[color:var(--accent)]"
+        >
+          <LibraryCover name={folder.name} kind="folder" cover={folder.cover} className="h-16 w-16 shrink-0" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-[color:var(--foreground)]">{folder.name}</p>
+            {folder.description && (
+              <p className="mt-1 line-clamp-2 text-xs leading-5 text-[color:var(--muted-foreground)]">{folder.description}</p>
+            )}
+            <p className="mt-2 text-xs text-[color:var(--muted-foreground)]">
+              {itemsInFolder(baseItems, folder.id).length} 条内容
+            </p>
+          </div>
+        </button>
+      ))}
     </div>
   )
 }

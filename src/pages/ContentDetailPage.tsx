@@ -6,7 +6,8 @@ import TagList from '../components/TagList'
 import VisibilityBadge from '../components/VisibilityBadge'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import CommentSection from '../components/CommentSection'
-import { getContentBySlug } from '../mockData'
+import { getContentBySlug, folders as allFolders, series as allSeries } from '../mockData'
+import { locationTrail } from '../lib/library'
 import { useCurrentUser } from '../auth'
 
 function formatDate(dateStr: string): string {
@@ -81,6 +82,7 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
   }
 
   const contentKind = localContentKind ?? item.contentKind
+  const trail = locationTrail(item, allFolders, allSeries)
   const typeLabel: Record<string, string> = { diary: '日记', pkm: '笔记与文章', thought: '随想' }
   const thoughtTypeLabel = item.thoughtType === 'excerpt' ? '摘录' : '原创'
 
@@ -205,7 +207,8 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
             <div className="mt-5 border-t border-[color:var(--border)] pt-4 text-sm text-[color:var(--muted-foreground)]">
               <div className="flex flex-wrap gap-x-5 gap-y-2">
                 {item.category && <span>分类：{item.category}</span>}
-                {item.series && <span>系列：{item.series}</span>}
+                {trail.folder && <span>文件夹：{trail.folder.name}</span>}
+                {trail.series && <span>系列：{trail.series.name}</span>}
                 <span>评论：{item.allowComments ? '已开启' : '未开启'}</span>
               </div>
               <p className="mt-2 text-xs">只有注册并登录的用户可以发表评论；普通 Note 默认不开启评论。</p>

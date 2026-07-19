@@ -25,9 +25,11 @@ export interface ContentItem {
   updatedAt: string
   publishedAt: string
   author: string
-  folder?: string
+  /** Owning folder. A note in a folder inherits that folder's series. */
+  folderId?: string
+  /** Direct series membership. Ignored when folderId is set — see effectiveSeriesId. */
+  seriesId?: string
   category?: string
-  series?: string
   cover?: string
   seoTitle?: string
   seoDescription?: string
@@ -40,6 +42,33 @@ export interface ContentItem {
   sourceUrl?: string
   sourceLocator?: string
   personalNote?: string
+}
+
+/**
+ * Series > Folder > Note.
+ *
+ * A folder may sit inside a series; a note may sit inside a folder, or
+ * directly inside a series. A note inside a folder always travels with that
+ * folder, so it can never appear in a series outside its folder.
+ */
+export interface Folder {
+  id: string
+  owner: string
+  name: string
+  description?: string
+  cover?: string
+  /** Series this folder belongs to, if any. */
+  seriesId?: string
+  createdAt: string
+}
+
+export interface Series {
+  id: string
+  owner: string
+  name: string
+  description?: string
+  cover?: string
+  createdAt: string
 }
 
 export interface Thought {

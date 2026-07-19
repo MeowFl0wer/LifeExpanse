@@ -15,116 +15,188 @@ function renderPkm() {
   )
 }
 
-// Seed data: two notes (前端 / React, 系统 / Linux), one draft note (Inbox),
-// one article (series: LifeExpanse 构建札记). The 技术 tag spans three of them.
-describe('PKM folder facet', () => {
+// Seed library: series 工程笔记(sr2) contains folders 前端 / React(fd1) and
+// 系统 / Linux(fd2). Inbox(fd3) is in no series. Series LifeExpanse 构建札记(sr1)
+// holds one article directly.
+describe('folders view', () => {
   beforeEach(() => {
     clearCurrentUser()
     setCurrentUser('euan')
   })
 
-  it('lists folders with counts and filters on click', async () => {
+  it('lists folders as cards rather than dumping the notes', async () => {
     const user = userEvent.setup()
     renderPkm()
     await user.click(screen.getByRole('button', { name: 'Folders' }))
 
-    const folderChip = screen.getByRole('button', { name: /前端 \/ React/ })
-    expect(folderChip).toBeTruthy()
-
-    await user.click(folderChip)
-
-    expect(screen.getByText('React 中的并发模式：一些实践记录')).toBeTruthy()
+    expect(screen.getByText('前端 / React')).toBeTruthy()
+    expect(screen.getByText('系统 / Linux')).toBeTruthy()
+    // Notes are inside the folders, not listed at this level.
     expect(screen.queryByText('SSH Config 常用配置备忘')).toBeNull()
   })
 
-  it('keeps every folder listed after one is chosen', async () => {
+  it('opens a folder and shows only its notes', async () => {
     const user = userEvent.setup()
     renderPkm()
     await user.click(screen.getByRole('button', { name: 'Folders' }))
     await user.click(screen.getByRole('button', { name: /前端 \/ React/ }))
 
-    // The other folders must remain selectable, not vanish with the results.
-    expect(screen.getByRole('button', { name: /系统 \/ Linux/ })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /Inbox/ })).toBeTruthy()
-  })
-
-  it('clicking the active folder again clears the filter', async () => {
-    const user = userEvent.setup()
-    renderPkm()
-    await user.click(screen.getByRole('button', { name: 'Folders' }))
-
-    const chip = screen.getByRole('button', { name: /前端 \/ React/ })
-    await user.click(chip)
-    expect(screen.queryByText('SSH Config 常用配置备忘')).toBeNull()
-
-    await user.click(screen.getByRole('button', { name: /前端 \/ React/ }))
-    expect(screen.getByText('SSH Config 常用配置备忘')).toBeTruthy()
-  })
-})
-
-describe('PKM tag facet', () => {
-  beforeEach(() => {
-    clearCurrentUser()
-    setCurrentUser('euan')
-  })
-
-  it('filters to items carrying the clicked tag', async () => {
-    const user = userEvent.setup()
-    renderPkm()
-    await user.click(screen.getByRole('button', { name: 'Tags' }))
-
-    await user.click(screen.getByRole('button', { name: /#React/ }))
-
     expect(screen.getByText('React 中的并发模式：一些实践记录')).toBeTruthy()
     expect(screen.queryByText('SSH Config 常用配置备忘')).toBeNull()
   })
 
-  it('reports what is being filtered and can clear it', async () => {
+  it('shows which series the open folder belongs to', async () => {
     const user = userEvent.setup()
     renderPkm()
-    await user.click(screen.getByRole('button', { name: 'Tags' }))
-    await user.click(screen.getByRole('button', { name: /#React/ }))
+    await user.click(screen.getByRole('button', { name: 'Folders' }))
+    await user.click(screen.getByRole('button', { name: /前端 \/ React/ }))
 
-    expect(screen.getByText(/正在按/)).toBeTruthy()
+    expect(screen.getByText(/属于系列「工程笔记」/)).toBeTruthy()
+  })
 
-    await user.click(screen.getByRole('button', { name: '清除' }))
-    expect(screen.getByText('SSH Config 常用配置备忘')).toBeTruthy()
+  it('can go back to the folder list', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Folders' }))
+    await user.click(screen.getByRole('button', { name: /前端 \/ React/ }))
+    await user.click(screen.getByRole('button', { name: '← 返回文件夹' }))
+
+    expect(screen.getByText('系统 / Linux')).toBeTruthy()
+  })
+
+  it('offers folder creation to the owner only', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Folders' }))
+    expect(screen.getByRole('button', { name: '+ 新建文件夹' })).toBeTruthy()
+
+    clearCurrentUser()
+    renderPkm()
+    const tabs = screen.getAllByRole('button', { name: 'Folders' })
+    await user.click(tabs[tabs.length - 1]!)
+    expect(screen.queryByRole('button', { name: '+ 新建文件夹' })).toBeNull()
+  })
+
+  it('exposes a settings action inside a folder', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Folders' }))
+    await user.click(screen.getByRole('button', { name: /前端 \/ React/ }))
+
+    expect(screen.getByRole('button', { name: '设置' })).toBeTruthy()
   })
 })
 
-describe('PKM series facet', () => {
+describe('series view', () => {
   beforeEach(() => {
     clearCurrentUser()
     setCurrentUser('euan')
   })
 
-  it('filters to the chosen series', async () => {
+  it('lists series as cards', async () => {
     const user = userEvent.setup()
     renderPkm()
     await user.click(screen.getByRole('button', { name: 'Series' }))
 
+    expect(screen.getByText('工程笔记')).toBeTruthy()
+    expect(screen.getByText('LifeExpanse 构建札记')).toBeTruthy()
+  })
+
+  // Rule 2.8: a note inside a folder shows up under that folder within the
+  // series, never loose alongside it.
+  it('shows a series as folders plus only its loose notes', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Series' }))
+    await user.click(screen.getByRole('button', { name: /工程笔记/ }))
+
+    // Its two folders appear...
+    expect(screen.getByText('前端 / React')).toBeTruthy()
+    expect(screen.getByText('系统 / Linux')).toBeTruthy()
+    // ...but their notes are not loose in the series.
+    expect(screen.queryByText('SSH Config 常用配置备忘')).toBeNull()
+    expect(screen.getByText(/没有直接归入本系列的内容/)).toBeTruthy()
+  })
+
+  it('shows notes filed directly into a series', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Series' }))
     await user.click(screen.getByRole('button', { name: /LifeExpanse 构建札记/ }))
 
     expect(screen.getByText('为什么我要自己做一个记录平台')).toBeTruthy()
-    expect(screen.queryByText('SSH Config 常用配置备忘')).toBeNull()
+  })
+
+  it('can drill from a series into one of its folders', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Series' }))
+    await user.click(screen.getByRole('button', { name: /工程笔记/ }))
+    await user.click(screen.getByRole('button', { name: /系统 \/ Linux/ }))
+
+    expect(screen.getByText('SSH Config 常用配置备忘')).toBeTruthy()
+  })
+
+  it('offers series creation to the owner', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Series' }))
+    expect(screen.getByRole('button', { name: '+ 新建系列' })).toBeTruthy()
   })
 })
 
-describe('switching views', () => {
+describe('tag filter strip', () => {
   beforeEach(() => {
     clearCurrentUser()
     setCurrentUser('euan')
   })
 
-  it('drops a folder filter so it cannot silently hide the next view', async () => {
+  it('replaces the old Tags tab', () => {
+    renderPkm()
+    expect(screen.queryByRole('button', { name: 'Tags' })).toBeNull()
+    expect(screen.getByRole('button', { name: /选择标签/ })).toBeTruthy()
+  })
+
+  it('stays collapsed until opened', async () => {
     const user = userEvent.setup()
     renderPkm()
-    await user.click(screen.getByRole('button', { name: 'Folders' }))
-    await user.click(screen.getByRole('button', { name: /前端 \/ React/ }))
-    expect(screen.queryByText('SSH Config 常用配置备忘')).toBeNull()
+    expect(screen.queryByRole('button', { name: /#React/ })).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: 'All' }))
+    await user.click(screen.getByRole('button', { name: /选择标签/ }))
+    expect(screen.getByRole('button', { name: /#React/ })).toBeTruthy()
+  })
+
+  it('filters on selection and relabels the toggle', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: /选择标签/ }))
+    await user.click(screen.getByRole('button', { name: /#React/ }))
+
+    expect(screen.getByText('React 中的并发模式：一些实践记录')).toBeTruthy()
+    expect(screen.queryByText('SSH Config 常用配置备忘')).toBeNull()
+    expect(screen.getByRole('button', { name: /已筛选标签/ })).toBeTruthy()
+  })
+
+  it('supports selecting several tags at once', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: /选择标签/ }))
+    await user.click(screen.getByRole('button', { name: /#React/ }))
+    await user.click(screen.getByRole('button', { name: /#Linux/ }))
+
+    expect(screen.getByText('React 中的并发模式：一些实践记录')).toBeTruthy()
     expect(screen.getByText('SSH Config 常用配置备忘')).toBeTruthy()
+  })
+
+  it('clears everything through 全部', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: /选择标签/ }))
+    await user.click(screen.getByRole('button', { name: /#React/ }))
+    await user.click(screen.getByRole('button', { name: '全部标签' }))
+
+    expect(screen.getByText('SSH Config 常用配置备忘')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /选择标签/ })).toBeTruthy()
   })
 })
 
@@ -137,8 +209,6 @@ describe('visibility filter chips', () => {
   it('renders one flat chip per state, not a badge inside a button', () => {
     renderPkm()
     const publicChip = screen.getByRole('button', { name: '公开' })
-    // A nested badge would leave an element inside the button; the label is now
-    // the button's own text.
     expect(publicChip.querySelector('span')).toBeNull()
     expect(publicChip.textContent).toBe('公开')
   })
@@ -146,10 +216,18 @@ describe('visibility filter chips', () => {
   it('filters by visibility', async () => {
     const user = userEvent.setup()
     renderPkm()
-
     await user.click(screen.getByRole('button', { name: '草稿' }))
 
     expect(screen.getByText('待整理的想法（草稿）')).toBeTruthy()
     expect(screen.queryByText('SSH Config 常用配置备忘')).toBeNull()
+  })
+})
+
+describe('new content entry', () => {
+  beforeEach(() => clearCurrentUser())
+
+  it('offers a 新建 button', () => {
+    renderPkm()
+    expect(screen.getByRole('button', { name: '+ 新建' })).toBeTruthy()
   })
 })

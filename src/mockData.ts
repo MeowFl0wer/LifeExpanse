@@ -1,7 +1,7 @@
 import type {
   ContentItem, Thought, TrajectoryEntry, FootprintCity, FlightRecord, Airport, UserProfile, SiteStats,
   EncryptedSpace, SpacePost, SpaceReply, ArticleComment, DeviceSession, AdminAccessRecord,
-  AdminUserRow, InvitationCode, SecurityLogEntry, RegistrationMode,
+  AdminUserRow, InvitationCode, SecurityLogEntry, RegistrationMode, Folder, Series,
 } from './types'
 import { matchFootprint } from './lib/footprint'
 import { uniqueSlug } from './lib/slug'
@@ -163,7 +163,7 @@ const deferredQuery = useDeferredValue(query)
     updatedAt: '2024-11-11T09:30:00Z',
     publishedAt: '2024-11-11T09:30:00Z',
     author: 'euan',
-    folder: '前端 / React',
+    folderId: 'fd1',
     favorite: true,
     archived: false,
     allowComments: false,
@@ -203,7 +203,7 @@ Host internal
     updatedAt: '2024-10-28T11:45:00Z',
     publishedAt: '2024-10-28T11:45:00Z',
     author: 'euan',
-    folder: '系统 / Linux',
+    folderId: 'fd2',
     favorite: false,
     archived: false,
     allowComments: false,
@@ -222,7 +222,7 @@ Host internal
     updatedAt: '2024-11-19T22:10:00Z',
     publishedAt: '',
     author: 'euan',
-    folder: 'Inbox',
+    folderId: 'fd3',
     favorite: false,
     archived: false,
     allowComments: false,
@@ -267,7 +267,7 @@ export const recentBlog: ContentItem[] = [
     publishedAt: '2024-11-06T14:30:00Z',
     author: 'euan',
     category: '产品与工程',
-    series: 'LifeExpanse 构建札记',
+    seriesId: 'sr1',
     cover: '/brand/hero-lifeexpanse-desktop.png',
     seoTitle: '为什么我要自己做一个记录平台 - LifeExpanse',
     seoDescription: '关于数据主权、公私边界和长期可用性的个人记录平台思考。',
@@ -276,6 +276,72 @@ export const recentBlog: ContentItem[] = [
     archived: false,
   },
 ]
+
+/* ---- Library: series > folder > note ---- */
+
+export const series: Series[] = [
+  {
+    id: 'sr1', owner: 'euan', name: 'LifeExpanse 构建札记',
+    description: '从需求到实现，记录这个平台是怎么一步步搭起来的。',
+    createdAt: '2024-11-01T00:00:00Z',
+  },
+  {
+    id: 'sr2', owner: 'euan', name: '工程笔记',
+    description: '平时攒下来的技术备忘。',
+    createdAt: '2024-09-01T00:00:00Z',
+  },
+]
+
+export const folders: Folder[] = [
+  {
+    id: 'fd1', owner: 'euan', name: '前端 / React',
+    description: 'React 相关的实践与踩坑。',
+    seriesId: 'sr2',
+    createdAt: '2024-10-01T00:00:00Z',
+  },
+  {
+    id: 'fd2', owner: 'euan', name: '系统 / Linux',
+    description: '服务器和命令行备忘。',
+    seriesId: 'sr2',
+    createdAt: '2024-10-05T00:00:00Z',
+  },
+  {
+    id: 'fd3', owner: 'euan', name: 'Inbox',
+    description: '还没归类的东西。',
+    createdAt: '2024-01-01T00:00:00Z',
+  },
+]
+
+export function addFolder(folder: Folder): void {
+  folders.push(folder)
+}
+
+export function addSeries(entry: Series): void {
+  series.push(entry)
+}
+
+export function updateFolder(id: string, patch: Partial<Folder>): void {
+  const target = folders.find(f => f.id === id)
+  if (target) Object.assign(target, patch)
+}
+
+export function updateSeries(id: string, patch: Partial<Series>): void {
+  const target = series.find(s => s.id === id)
+  if (target) Object.assign(target, patch)
+}
+
+export function updateContentItem(id: string, patch: Partial<ContentItem>): void {
+  const target = allContent.find(c => c.id === id)
+  if (target) Object.assign(target, patch)
+}
+
+export function getFolder(id: string | undefined): Folder | undefined {
+  return id ? folders.find(f => f.id === id) : undefined
+}
+
+export function getSeries(id: string | undefined): Series | undefined {
+  return id ? series.find(s => s.id === id) : undefined
+}
 
 export const airports: Record<string, Airport> = {
   PEK: { iata: 'PEK', name: '北京首都国际机场', city: '北京', country: '中国', lat: 40.0799, lng: 116.6031 },

@@ -4,8 +4,13 @@ import VisibilityBadge from '../components/VisibilityBadge'
 import MediaInsertMenu from '../components/MediaInsertMenu'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import { useCurrentUser } from '../auth'
-import { addContentItem, addTrajectoryEntry, recordFootprintVisit, makeUniqueSlug } from '../mockData'
+import {
+  addContentItem, addTrajectoryEntry, recordFootprintVisit, makeUniqueSlug,
+  folders as allFolders, series as allSeries, addFolder, addSeries,
+} from '../mockData'
 import { slugify } from '../lib/slug'
+import { extractHashTags, normaliseMembership } from '../lib/library'
+import LibraryPicker from '../components/LibraryPicker'
 import type { ContentItem, ContentKind, ContentType, ThoughtType, ThoughtSourceType, Visibility } from '../types'
 
 type CreateType = 'thought' | 'diary' | 'note' | 'article' | 'trajectory'
@@ -59,6 +64,28 @@ export default function ContentCreatePage() {
   const [trajCountry, setTrajCountry] = useState('')
   const [trajWriteToMap, setTrajWriteToMap] = useState(true)
 
+  // Library placement (notes and articles only)
+  const [folderId, setFolderId] = useState('')
+  const [seriesId, setSeriesId] = useState('')
+  const [, bumpLibrary] = useState(0)
+
+  function createFolder(name: string): string {
+    const id = `fd-${Date.now()}`
+    addFolder({ id, owner: currentUser ?? 'euan', name, createdAt: new Date().toISOString() })
+    bumpLibrary(n => n + 1)
+    return id
+  }
+
+  function createSeries(name: string): string {
+    const id = `sr-${Date.now()}`
+    addSeries({ id, owner: currentUser ?? 'euan', name, createdAt: new Date().toISOString() })
+    bumpLibrary(n => n + 1)
+    return id
+  }
+
+  // #tags typed into the body are captured alongside the comma-separated field.
+  const inlineTags = extractHashTags(body)
+
   const isDirty = Boolean(title || body || tagInput || trajCity || sourceTitle)
 
   useEffect(() => {
@@ -110,11 +137,13 @@ export default function ContentCreatePage() {
     await new Promise(r => setTimeout(r, 600))
 
     const now = new Date().toISOString()
-    const tags = tagInput
-      .split(/[,，]/)
-      .map(t => t.trim())
-      .filter(Boolean)
-      .map((name, i) => ({ id: `tag-${Date.now()}-${i}`, name }))
+    const tagNames = Array.from(
+      new Set([
+        ...tagInput.split(/[,，]/).map(t => t.trim()).filter(Boolean),
+        ...extractHashTags(body),
+      ])
+    )
+    const tags = tagNames.map((name, i) => ({ id: `tag-${Date.now()}-${i}`, name }))
 
     if (createType === 'trajectory') {
       addTrajectoryEntry({
@@ -159,7 +188,13 @@ export default function ContentCreatePage() {
       updatedAt: now,
       publishedAt: visibility === 'draft' ? '' : now,
       author: currentUser!,
-      ...(type === 'pkm' ? { contentKind, allowComments: contentKind === 'article' } : {}),
+      ...(type === 'pkm'
+        ? {
+            contentKind,
+            allowComments: contentKind === 'article',
+            ...normaliseMembership({ folderId, seriesId }),
+          }
+        : {}),
       ...(type === 'thought'
         ? {
             thoughtType,
@@ -306,7 +341,7 @@ export default function ContentCreatePage() {
                 type="text"
                 value={tagInput}
                 onChange={e => setTagInput(e.target.value)}
-                placeholder="技术, 旅行, 随想（用逗号分隔）"
+                placeholder="技术, 旅行（逗号分隔，正文里的 #标签 也会自动收录）"
                 className="life-input min-w-0 flex-1 px-2 py-1 text-xs"
               />
             </div>
@@ -322,6 +357,32 @@ export default function ContentCreatePage() {
               </select>
               <input value={sourceLocator} onChange={e => setSourceLocator(e.target.value)} placeholder="页码 / 章节 / 时间点" className="life-input px-3 py-2 text-sm" />
               <input value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} placeholder="来源链接（https://）" className="life-input px-3 py-2 text-sm sm:col-span-2" />
+            </div>
+          )}
+
+          {(createType === 'note' || createType === 'article') && (
+            <div className="border-b border-[color:var(--border)] pb-4">
+              <LibraryPicker
+                folders={allFolders.filter(f => f.owner === currentUser)}
+                series={allSeries.filter(s => s.owner === currentUser)}
+                folderId={folderId}
+                seriesId={seriesId}
+                onChange={next => { setFolderId(next.folderId); setSeriesId(next.seriesId) }}
+                onCreateFolder={createFolder}
+                onCreateSeries={createSeries}
+              />
+            </div>
+          )}
+
+          {inlineTags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-[color:var(--muted-foreground)]">正文中的标签</span>
+              {inlineTags.map(name => (
+                <span key={name} className="rounded-full border border-[#CDE4EE] bg-[#EEF7FB] px-2 py-0.5 text-[11px] text-[#2D7182]">
+                  #{name}
+                </span>
+              ))}
+              <span className="text-xs text-[color:var(--muted-foreground)]">保存时会一并记录</span>
             </div>
           )}
 

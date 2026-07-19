@@ -3,7 +3,12 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import VisibilityBadge from '../components/VisibilityBadge'
 import MediaInsertMenu from '../components/MediaInsertMenu'
 import MarkdownRenderer from '../components/MarkdownRenderer'
-import { getContentBySlug } from '../mockData'
+import {
+  getContentBySlug, updateContentItem,
+  folders as allFolders, series as allSeries, addFolder, addSeries,
+} from '../mockData'
+import { extractHashTags, normaliseMembership } from '../lib/library'
+import LibraryPicker from '../components/LibraryPicker'
 import type { ContentKind, ThoughtType, Visibility } from '../types'
 import { useCurrentUser } from '../auth'
 
@@ -26,6 +31,9 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
   const [contentKind, setContentKind] = useState<ContentKind>(item?.contentKind ?? 'note')
   const [thoughtType, setThoughtType] = useState<ThoughtType>(item?.thoughtType ?? 'original')
   const [allowComments, setAllowComments] = useState(item?.allowComments ?? false)
+  const [folderId, setFolderId] = useState(item?.folderId ?? '')
+  const [seriesId, setSeriesId] = useState(item?.seriesId ?? '')
+  const [, bumpLibrary] = useState(0)
   const [tab, setTab] = useState<Tab>('write')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -38,7 +46,9 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
     visibility !== (item?.visibility ?? 'public') ||
     contentKind !== (item?.contentKind ?? 'note') ||
     thoughtType !== (item?.thoughtType ?? 'original') ||
-    allowComments !== (item?.allowComments ?? false)
+    allowComments !== (item?.allowComments ?? false) ||
+    folderId !== (item?.folderId ?? '') ||
+    seriesId !== (item?.seriesId ?? '')
 
   // Warn on page leave when dirty
   useEffect(() => {
@@ -76,8 +86,27 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
       return
     }
     setSaving(true)
-    // Simulate save
     await new Promise(r => setTimeout(r, 900))
+
+    const tagNames = Array.from(
+      new Set([
+        ...tagInput.split(/[,，]/).map(t => t.trim()).filter(Boolean),
+        ...extractHashTags(body),
+      ])
+    )
+    updateContentItem(item!.id, {
+      title: title.trim(),
+      body,
+      visibility,
+      allowComments,
+      tags: tagNames.map((name, i) => ({ id: `tag-${Date.now()}-${i}`, name })),
+      ...(item!.type === 'pkm'
+        ? { contentKind, ...normaliseMembership({ folderId, seriesId }) }
+        : {}),
+      ...(item!.type === 'thought' ? { thoughtType } : {}),
+      updatedAt: new Date().toISOString(),
+    })
+
     setSaving(false)
     setSaved(true)
     setTimeout(() => {
@@ -285,6 +314,30 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
               </label>
             )}
           </div>
+
+          {item.type === 'pkm' && (
+            <div className="border-b border-[color:var(--border)] pb-4">
+              <LibraryPicker
+                folders={allFolders.filter(f => f.owner === item.author)}
+                series={allSeries.filter(s => s.owner === item.author)}
+                folderId={folderId}
+                seriesId={seriesId}
+                onChange={next => { setFolderId(next.folderId); setSeriesId(next.seriesId) }}
+                onCreateFolder={name => {
+                  const id = `fd-${Date.now()}`
+                  addFolder({ id, owner: item.author, name, createdAt: new Date().toISOString() })
+                  bumpLibrary(n => n + 1)
+                  return id
+                }}
+                onCreateSeries={name => {
+                  const id = `sr-${Date.now()}`
+                  addSeries({ id, owner: item.author, name, createdAt: new Date().toISOString() })
+                  bumpLibrary(n => n + 1)
+                  return id
+                }}
+              />
+            </div>
+          )}
 
           {/* Editor toolbar */}
           <div className="flex items-center gap-3 flex-wrap">
