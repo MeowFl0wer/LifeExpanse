@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import WorldMap from '../components/WorldMap'
-import { footprintCities, addTrajectoryEntry, CITY_COORDS } from '../mockData'
+import { footprintCities, addTrajectoryEntry, recordFootprintVisit } from '../mockData'
 import type { FootprintCity } from '../types'
 import { isOwnerOf } from '../auth'
 
@@ -70,25 +70,15 @@ export default function FootprintMapPage() {
       setFormMsg('请填写国家、城市和到达日期')
       return
     }
-    const existing = cities.find(c => c.city === city && c.country === country)
-    if (existing) {
-      setFormMsg(`「${city}」已有到访记录，建议合并到已有城市而不是新增（前端原型暂不支持自动合并）。`)
-      return
-    }
-    const matched = CITY_COORDS[city]
-    const newCity: FootprintCity = {
-      id: `fp-${Date.now()}`,
-      city,
-      country,
-      lat: matched?.lat ?? 0,
-      lng: matched?.lng ?? 0,
-      firstVisit: form.arrival,
-      lastVisit: form.departure || form.arrival,
+
+    // Same merge path the trajectory pages use, so an existing city gains
+    // visits instead of gaining a duplicate row.
+    const result = recordFootprintVisit(city, country, form.arrival, {
       visitCount: Number(form.visitCount) || 1,
-      pending: !matched,
       note: form.note.trim() || undefined,
-    }
-    setCities(prev => [...prev, newCity])
+      departure: form.departure || undefined,
+    })
+    setCities([...footprintCities])
 
     if (form.linkToTrajectory) {
       addTrajectoryEntry({
@@ -101,16 +91,20 @@ export default function FootprintMapPage() {
       })
     }
 
-    setFormMsg(
-      matched
-        ? `已添加「${city}」到访记录，地图已同步点亮${form.linkToTrajectory ? '，并已写入人生轨迹' : ''}。`
-        : `已添加「${city}」到访记录，坐标暂待人工确认，暂不会出现在地图上${form.linkToTrajectory ? '（人生轨迹记录已同步创建）' : ''}。`
-    )
+    const base = result.merged
+      ? `已并入已有的「${city}」记录，到访次数 +${Number(form.visitCount) || 1}。`
+      : result.ambiguous
+        ? `存在多个同名城市「${city}」，已新建一条待确认记录，不会自动合并。`
+        : result.onMap
+          ? `已添加「${city}」到访记录，地图已同步点亮。`
+          : `已添加「${city}」到访记录，坐标暂待人工确认，不会出现在地图上。`
+
+    setFormMsg(base + (form.linkToTrajectory ? '已同步写入人生轨迹。' : ''))
     setForm(emptyForm)
     setTimeout(() => {
       setShowAddForm(false)
       setFormMsg('')
-    }, 2200)
+    }, 2400)
   }
 
   return (

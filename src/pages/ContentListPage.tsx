@@ -4,7 +4,7 @@ import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import ContentCard from '../components/ContentCard'
 import VisibilityBadge from '../components/VisibilityBadge'
-import { allContent } from '../mockData'
+import { allContent, addContentItem, makeUniqueSlug } from '../mockData'
 import type { ContentItem, ThoughtType, Visibility } from '../types'
 import { isOwnerOf } from '../auth'
 
@@ -66,9 +66,11 @@ export default function ContentListPage() {
   const [quickText, setQuickText] = useState('')
   const [quickSourceTitle, setQuickSourceTitle] = useState('')
   const [quickSourceAuthor, setQuickSourceAuthor] = useState('')
+  const [createdTick, setCreatedTick] = useState(0)
 
   const isOwner = isOwnerOf(username)
 
+  void createdTick
   let items = allContent.filter(c => {
     if (!matchesSection(c, sec)) return false
     if (c.author !== username) return false
@@ -105,16 +107,43 @@ export default function ContentListPage() {
 
   function handleQuickThoughtSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!quickText.trim()) {
+    const text = quickText.trim()
+    if (!text) {
       alert('请先写下一段随想')
       return
     }
-    const typeLabel = quickThoughtType === 'original' ? '原创' : '摘录'
-    alert(`前端原型：将创建一条${typeLabel}随想。\n\n已保存内容会进入只读展示，点击编辑后才能修改。`)
+
+    const now = new Date().toISOString()
+    addContentItem({
+      id: `c-${Date.now()}`,
+      slug: makeUniqueSlug(`thought-${Date.now()}`),
+      type: 'thought',
+      thoughtType: quickThoughtType,
+      title: text,
+      body: quickThoughtType === 'excerpt'
+        ? `> ${text}${quickSourceAuthor.trim() ? `\n\n作者或说话者：${quickSourceAuthor.trim()}` : ''}${quickSourceTitle.trim() ? `\n\n作品：${quickSourceTitle.trim()}` : ''}`
+        : text,
+      summary: text.slice(0, 60),
+      // Quick capture defaults to private; visibility is changed explicitly later.
+      visibility: 'private',
+      tags: [],
+      createdAt: now,
+      updatedAt: now,
+      publishedAt: now,
+      author: username ?? 'euan',
+      ...(quickThoughtType === 'excerpt'
+        ? {
+            sourceAuthor: quickSourceAuthor.trim() || undefined,
+            sourceTitle: quickSourceTitle.trim() || undefined,
+          }
+        : {}),
+    })
+
     setQuickText('')
     setQuickSourceTitle('')
     setQuickSourceAuthor('')
     setQuickThoughtType('original')
+    setCreatedTick(t => t + 1)
   }
 
   return (

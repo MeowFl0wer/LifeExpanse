@@ -170,9 +170,12 @@ export default function TrajectoryPage() {
 
     // Ch 12.4: each selected date produces its own footprint visit.
     let onMap = false
+    let ambiguous = false
     if (data.writeToMap) {
       for (const date of dates) {
-        onMap = recordFootprintVisit(data.city, data.country, date) || onMap
+        const result = recordFootprintVisit(data.city, data.country, date)
+        onMap = onMap || result.onMap
+        ambiguous = ambiguous || result.ambiguous
       }
     }
 
@@ -181,9 +184,11 @@ export default function TrajectoryPage() {
     alert(
       `已创建 ${dates.length} 条轨迹记录，使用同一个 batch_id 关联。\n\n` +
       (data.writeToMap
-        ? onMap
-          ? `已为每个日期分别生成足迹到访记录，${data.city} 的到访次数 +${dates.length}。\n\n`
-          : `${data.city} 暂无坐标，已加入足迹列表并标记为待确认，不会出现在地图上。\n\n`
+        ? ambiguous
+          ? `存在多个同名城市「${data.city}」，未填写国家时不会自动合并；已新建一条待确认记录。\n\n`
+          : onMap
+            ? `已为每个日期分别生成足迹到访记录，${data.city} 的到访次数 +${dates.length}。\n\n`
+            : `${data.city} 暂无坐标，已加入足迹列表并标记为待确认，不会出现在地图上。\n\n`
         : '') +
       '后续编辑时可以选择「只修改当前日期」或「修改本批次全部记录」。'
     )

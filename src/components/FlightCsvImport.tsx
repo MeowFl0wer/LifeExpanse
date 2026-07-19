@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { parseCsv } from '../lib/csv'
 import type { FlightRecord } from '../types'
 
 interface FlightCsvImportProps {
@@ -22,57 +23,6 @@ const STATUS_MAP: Record<string, FlightRecord['status']> = {
   正常: 'normal', normal: 'normal',
   延误: 'delayed', delayed: 'delayed',
   取消: 'cancelled', 退票: 'cancelled', cancelled: 'cancelled',
-}
-
-/**
- * Splits CSV text into rows of fields, honouring RFC 4180 quoting: fields may
- * be double-quoted, quoted fields may contain commas and newlines, and `""`
- * inside a quoted field is a literal quote.
- */
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = []
-  let row: string[] = []
-  let field = ''
-  let inQuotes = false
-
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i]
-
-    if (inQuotes) {
-      if (char === '"') {
-        if (text[i + 1] === '"') {
-          field += '"'
-          i++
-        } else {
-          inQuotes = false
-        }
-      } else {
-        field += char
-      }
-      continue
-    }
-
-    if (char === '"') {
-      inQuotes = true
-    } else if (char === ',') {
-      row.push(field.trim())
-      field = ''
-    } else if (char === '\n' || char === '\r') {
-      // Swallow the \n of a \r\n pair.
-      if (char === '\r' && text[i + 1] === '\n') i++
-      row.push(field.trim())
-      field = ''
-      if (row.some(c => c !== '')) rows.push(row)
-      row = []
-    } else {
-      field += char
-    }
-  }
-
-  row.push(field.trim())
-  if (row.some(c => c !== '')) rows.push(row)
-
-  return rows
 }
 
 export default function FlightCsvImport({ existing, knownAirports, onClose, onImport }: FlightCsvImportProps) {

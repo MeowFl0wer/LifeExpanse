@@ -3,6 +3,8 @@ import type {
   EncryptedSpace, SpacePost, SpaceReply, ArticleComment, DeviceSession, AdminAccessRecord,
   AdminUserRow, InvitationCode, SecurityLogEntry, RegistrationMode,
 } from './types'
+import { matchFootprint } from './lib/footprint'
+import { uniqueSlug } from './lib/slug'
 
 export const euanProfile: UserProfile = {
   username: 'euan',
@@ -353,41 +355,80 @@ export const CITY_COORDS: Record<string, { lat: number; lng: number; country: st
   悉尼: { lat: -33.8688, lng: 151.2093, country: '澳大利亚' },
 }
 
-/**
- * Records a city-level visit, merging into an existing city when one matches
- * so repeated visits bump the counter instead of creating duplicate rows.
- * Returns true when the city landed on the map (i.e. coordinates were known).
- */
-export function recordFootprintVisit(city: string, country: string, date: string): boolean {
-  const name = city.trim()
-  if (!name) return false
+export interface FootprintVisitResult {
+  /** True when the visit was folded into an existing city rather than added. */
+  merged: boolean
+  /** True when the city has known coordinates and therefore appears on the map. */
+  onMap: boolean
+  /**
+   * True when a same-named city exists in another country and no country was
+   * supplied, so a new pending row was created rather than guessing which one
+   * was meant (Ch 13.3: never silently match the wrong city).
+   */
+  ambiguous: boolean
+}
 
-  const existing = footprintCities.find(c => c.city === name)
-  if (existing) {
-    existing.visitCount += 1
+/**
+ * Records a city-level visit. Cities are identified by name *and* country, so
+ *同名 cities in different countries stay separate.
+ */
+export function recordFootprintVisit(
+  city: string,
+  country: string,
+  date: string,
+  options: { visitCount?: number; note?: string; departure?: string } = {}
+): FootprintVisitResult {
+  const name = city.trim()
+  const land = country.trim()
+  const times = Math.max(1, options.visitCount ?? 1)
+
+  if (!name) return { merged: false, onMap: false, ambiguous: false }
+
+  const match = matchFootprint(footprintCities, name, land)
+
+  if (match.kind === 'merge') {
+    const existing = match.target
+    existing.visitCount += times
     if (date && date < existing.firstVisit) existing.firstVisit = date
-    if (date && date > existing.lastVisit) existing.lastVisit = date
-    return !existing.pending
+    const latest = options.departure || date
+    if (latest && latest > existing.lastVisit) existing.lastVisit = latest
+    if (options.note) existing.note = options.note
+    return { merged: true, onMap: !existing.pending, ambiguous: false }
   }
 
-  const matched = CITY_COORDS[name]
+  const ambiguous = match.kind === 'ambiguous'
+  const known = CITY_COORDS[name]
+  // Only trust the coordinate when the country agrees (or none was supplied).
+  const matched = !land || known?.country === land ? known : undefined
+  const pending = ambiguous || !matched
+
   footprintCities.push({
     id: `fp-${name}-${Date.now()}`,
     city: name,
-    country: country.trim() || matched?.country || '—',
+    country: land || matched?.country || '—',
     lat: matched?.lat ?? 0,
     lng: matched?.lng ?? 0,
     firstVisit: date,
-    lastVisit: date,
-    visitCount: 1,
-    pending: !matched,
+    lastVisit: options.departure || date,
+    visitCount: times,
+    pending,
+    note: options.note,
   })
-  return Boolean(matched)
+  return { merged: false, onMap: !pending, ambiguous }
 }
 
 /** Appends a newly created item so it shows up in lists, search and detail pages. */
 export function addContentItem(item: ContentItem): void {
   allContent.push(item)
+}
+
+/**
+ * Slugs address content, so two items must never share one — otherwise
+ * getContentBySlug returns the older item and "view what I just saved" opens
+ * the wrong page. Appends -2, -3, ... until the slug is free.
+ */
+export function makeUniqueSlug(base: string): string {
+  return uniqueSlug(base, allContent.map(c => c.slug))
 }
 
 export const footprintCities: FootprintCity[] = [

@@ -4,14 +4,9 @@ import VisibilityBadge from '../components/VisibilityBadge'
 import MediaInsertMenu from '../components/MediaInsertMenu'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import { getCurrentUser } from '../auth'
-import { addContentItem, addTrajectoryEntry, recordFootprintVisit } from '../mockData'
+import { addContentItem, addTrajectoryEntry, recordFootprintVisit, makeUniqueSlug } from '../mockData'
+import { slugify } from '../lib/slug'
 import type { ContentItem, ContentKind, ContentType, ThoughtType, ThoughtSourceType, Visibility } from '../types'
-
-/** Slug from the title where possible; CJK titles fall back to a timestamp. */
-function makeSlug(title: string): string {
-  const ascii = title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  return ascii || `entry-${Date.now()}`
-}
 
 type CreateType = 'thought' | 'diary' | 'note' | 'article' | 'trajectory'
 type Tab = 'write' | 'preview'
@@ -131,26 +126,26 @@ export default function ContentCreatePage() {
         tags,
       })
 
-      let onMap = false
+      let mapNote = ''
       if (trajWriteToMap) {
-        onMap = recordFootprintVisit(trajCity.trim(), trajCountry.trim(), trajDate)
+        const result = recordFootprintVisit(trajCity.trim(), trajCountry.trim(), trajDate)
+        mapNote = result.ambiguous
+          ? '\n\n存在多个同名城市，未填写国家时不会自动合并；已新建一条待确认记录。'
+          : result.onMap
+            ? result.merged
+              ? '\n\n当天城市已并入已有足迹记录，到访次数 +1。'
+              : '\n\n当天城市已写入足迹地图。'
+            : '\n\n该城市暂无坐标，已加入足迹列表并标记为待确认，不会出现在地图上。'
       }
 
       setSaving(false)
-      alert(
-        `已创建 1 条人生轨迹记录。` +
-        (trajWriteToMap
-          ? onMap
-            ? '\n\n当天城市已写入足迹地图。'
-            : '\n\n该城市暂无坐标，已加入足迹列表并标记为待确认，不会出现在地图上。'
-          : '')
-      )
+      alert(`已创建 1 条人生轨迹记录。${mapNote}`)
       navigate(`/${currentUser}/trajectory`)
       return
     }
 
     const type: ContentType = createType === 'thought' ? 'thought' : createType === 'diary' ? 'diary' : 'pkm'
-    const slug = makeSlug(title || body.slice(0, 30))
+    const slug = makeUniqueSlug(slugify(title || body.slice(0, 30), `entry-${Date.now()}`))
     const item: ContentItem = {
       id: `c-${Date.now()}`,
       slug,
