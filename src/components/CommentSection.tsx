@@ -20,10 +20,11 @@ function formatDateTime(dateStr: string): string {
 export default function CommentSection({ contentId, contentAuthor, allowComments }: CommentSectionProps) {
   const currentUser = getCurrentUser()
   const [body, setBody] = useState('')
-  const [tick, setTick] = useState(0)
+  // Comments live in a module-level mock store, so a local counter is what
+  // re-reads them after posting. The value itself is never needed.
+  const [, bumpComments] = useState(0)
   const [notice, setNotice] = useState('')
 
-  void tick
   const comments = getComments(contentId)
   const isContentAuthor = currentUser === contentAuthor
 
@@ -45,7 +46,7 @@ export default function CommentSection({ contentId, contentAuthor, allowComments
     addComment(comment)
     setBody('')
     setNotice('')
-    setTick(t => t + 1)
+    bumpComments(n => n + 1)
   }
 
   if (!allowComments) {

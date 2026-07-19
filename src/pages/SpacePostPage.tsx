@@ -20,7 +20,9 @@ export default function SpacePostPage() {
 
   const [nickname, setNickname] = useState('')
   const [replyText, setReplyText] = useState('')
-  const [replyTick, setReplyTick] = useState(0)
+  // Replies live in a module-level mock store, so a local counter is what
+  // re-reads them after posting. The value itself is never needed.
+  const [, bumpReplies] = useState(0)
   const [notice, setNotice] = useState('')
 
   const authorized = space
@@ -36,8 +38,6 @@ export default function SpacePostPage() {
     return <Navigate to={`/${username}/space/${space.spaceKey}`} replace />
   }
 
-  // replyTick forces a re-read after a reply is appended to the mock store.
-  void replyTick
   const replies = getSpaceReplies(post.id)
 
   function handleReply(e: React.FormEvent) {
@@ -64,7 +64,7 @@ export default function SpacePostPage() {
     setReplyText('')
     setNickname('')
     setNotice('')
-    setReplyTick(t => t + 1)
+    bumpReplies(n => n + 1)
   }
 
   return (

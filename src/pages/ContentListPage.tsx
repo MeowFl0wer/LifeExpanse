@@ -66,7 +66,6 @@ export default function ContentListPage() {
 
   const isOwner = isOwnerOf(username)
 
-  void createdTick
   let items = allContent.filter(c => {
     if (!matchesSection(c, sec)) return false
     if (c.author !== username) return false
