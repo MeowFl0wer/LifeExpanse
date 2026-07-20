@@ -2,10 +2,15 @@
  * Seed data that pages may still read directly.
  *
  * This is a façade over `src/api/store.ts`, and what it leaves out is the
- * point: **nothing content-related is re-exported here.** `allContent`,
+ * point: **no content is reachable through it.** `allContent`,
  * `getContentBySlug`, the trash functions and the slug allocator are reachable
  * only from `src/api/`, so a page that tries to read or write content without
  * going through the data layer fails to compile.
+ *
+ * `nextId` is the one general-purpose helper still exported. It allocates ids
+ * for the modules below that build their own rows (trajectory, flights,
+ * space replies). It cannot reach content — the data layer allocates those
+ * ids itself — and it leaves this file with the last of those modules.
  *
  * That matters because permission filtering and the ownership rule live in the
  * data layer. Every time a page has been allowed to read the store directly,

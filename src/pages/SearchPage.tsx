@@ -5,6 +5,7 @@ import Footer from '../components/Footer'
 import ContentCard from '../components/ContentCard'
 import { trajectoryEntries, footprintCities } from '../mockData'
 import { listAllVisible } from '../api/pkm'
+import { SITE_OWNER } from '../lib/site'
 import { useCurrentUser } from '../auth'
 import type { ContentItem, Visibility } from '../types'
 
@@ -37,7 +38,10 @@ export default function SearchPage() {
   const [visibleContent, setVisibleContent] = useState<ContentItem[]>([])
   useEffect(() => {
     let cancelled = false
-    listAllVisible(currentUser)
+    // Scoped to the site owner: that is whose content the public pages show,
+    // and the server needs an author to scope by. Cross-user search would
+    // need a global endpoint the backend does not have yet.
+    listAllVisible(SITE_OWNER, currentUser)
       .then(items => { if (!cancelled) setVisibleContent(items) })
       .catch(() => { if (!cancelled) setVisibleContent([]) })
     return () => { cancelled = true }
