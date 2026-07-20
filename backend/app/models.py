@@ -140,6 +140,39 @@ class InviteCode(Base):
         return self.used_at is not None or self.revoked_at is not None
 
 
+class MediaFile(Base):
+    """An uploaded image or video.
+
+    The id is a long random string and forms the URL. That alone is not the
+    access control — `visibility` is, and the serving endpoint checks it — but
+    it means an unguessable URL is the floor rather than the ceiling.
+
+    The bytes live on disk under a path derived from the id; only the metadata
+    is in the database. Keeping them out of SQLite is what lets a backup of the
+    database stay small and a media directory be synced separately.
+    """
+
+    __tablename__ = "media_files"
+
+    id: Mapped[str] = mapped_column(String(48), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+
+    # image | video
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    mime: Mapped[str] = mapped_column(String(100))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    # Lets a later version spot duplicates and verify integrity after a restore.
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    original_name: Mapped[str] = mapped_column(String(255), default="")
+
+    # public | private. Private is the default: an upload should not become
+    # readable by the world merely because it was uploaded.
+    visibility: Mapped[str] = mapped_column(String(16), default="private", index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+
 class SiteSetting(Base):
     """Single-row key/value store for settings an admin can change at runtime."""
 
