@@ -427,23 +427,10 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
                 restored.baseUpdatedAt && item.updatedAt && restored.baseUpdatedAt !== item.updatedAt
               )}
               onDiscard={() => {
-                // Back to what is actually stored.
-                setTitle(item.title)
-                setBody(item.body)
-                setTagInput(item.tags.map(t => t.name).join(', '))
-                setVisibility(item.visibility)
-                setContentKind(item.contentKind ?? 'note')
-                setThoughtType(item.thoughtType ?? 'original')
-                setAllowComments(item.allowComments ?? false)
-                setSummary(item.summary ?? '')
-                setCover(item.cover ?? '')
-                setCategory(item.category ?? '')
-                setSeoTitle(item.seoTitle ?? '')
-                setSeoDescription(item.seoDescription ?? '')
-                setFavorite(item.favorite ?? false)
-                setArchived(item.archived ?? false)
-                setFolderIds(item.folderIds ?? [])
-                setSeriesIds(item.seriesIds ?? [])
+                // Back to what is actually stored. Same function the initial
+                // load uses: a second hand-written list of every field is
+                // exactly how the source fields got left behind before.
+                hydrate(item)
                 autosave.discard()
                 setRestored(null)
               }}

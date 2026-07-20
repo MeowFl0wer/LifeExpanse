@@ -303,6 +303,50 @@ describe('excerpt provenance is tracked as unsaved work', () => {
     }, { timeout: 3000 })
   })
 
+  // The reported bug: discarding restored the visible fields but left the
+  // source values from the draft in place, and saving then wrote them back.
+  it('discarding a restored draft puts the source fields back', async () => {
+    const user = userEvent.setup()
+    const excerpt = await makeExcerpt()
+    const first = await renderThoughtEdit(excerpt.slug)
+
+    await user.clear(screen.getByLabelText('作者或说话者'))
+    await user.type(screen.getByLabelText('作者或说话者'), '草稿里的作者')
+    await user.type(screen.getByLabelText('来源链接'), 'https://example.com/draft')
+    await waitFor(async () =>
+      expect(await loadDraft(editKey('euan', excerpt.id))).not.toBeNull(), { timeout: 3000 })
+    first.unmount()
+
+    await renderThoughtEdit(excerpt.slug)
+    await waitFor(() => expect(screen.getByText('已恢复未保存的草稿')).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: '放弃草稿' }))
+
+    // Back to what is stored, not what the draft held.
+    await waitFor(() =>
+      expect((screen.getByLabelText('作者或说话者') as HTMLInputElement).value)
+        .toBe('原作者'))
+    expect((screen.getByLabelText('来源链接') as HTMLInputElement).value).toBe('')
+  })
+
+  it('discarding also puts the ordinary fields back', async () => {
+    const user = userEvent.setup()
+    const excerpt = await makeExcerpt()
+    const first = await renderThoughtEdit(excerpt.slug)
+
+    await user.clear(screen.getByLabelText('正文'))
+    await user.type(screen.getByLabelText('正文'), '草稿正文')
+    await waitFor(async () =>
+      expect(await loadDraft(editKey('euan', excerpt.id))).not.toBeNull(), { timeout: 3000 })
+    first.unmount()
+
+    await renderThoughtEdit(excerpt.slug)
+    await waitFor(() => expect(screen.getByText('已恢复未保存的草稿')).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: '放弃草稿' }))
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('正文') as HTMLTextAreaElement).value).toBe('引用的内容'))
+  })
+
   it('restores the source fields from a draft', async () => {
     const user = userEvent.setup()
     const excerpt = await makeExcerpt()
