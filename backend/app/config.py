@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     # so an unconfigured deployment never ends up with a guessable admin.
     admin_bootstrap_password: str = ""
 
+    # ---- Uploads ----
+    # Bytes live on disk, not in the database: it keeps a database backup small
+    # and lets the media directory be synced separately. Object storage can
+    # replace this behind the same `storage` interface later.
+    media_root: str = "./data/media"
+    max_image_bytes: int = 10 * 1024 * 1024
+    max_video_bytes: int = 200 * 1024 * 1024
+    # Per-user total. 0 means unlimited.
+    storage_quota_bytes: int = 2 * 1024 * 1024 * 1024
+
     # ---- Email verification ----
     verification_code_ttl_minutes: int = 10
     # Guesses allowed against one code before it is burned.

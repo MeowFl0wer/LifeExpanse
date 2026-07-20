@@ -1,12 +1,14 @@
-import { useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { fetchQuota, formatBytes, uploadMedia, type MediaQuota } from '../api/media'
 
 interface MediaInsertMenuProps {
   onInsert: (markdown: string) => void
+  /** Public content needs publicly readable media; drafts and private notes do not. */
+  visibility?: 'public' | 'private'
 }
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm']
-const MAX_VIDEO_SIZE = 20 * 1024 * 1024 // 20 MB
 
 const SUPPORTED_VIDEO_PATTERNS = [
   { name: 'YouTube', re: /youtube\.com\/watch\?v=([A-Za-z0-9_-]+)|youtu\.be\/([A-Za-z0-9_-]+)/, platform: 'youtube' },
@@ -26,14 +28,28 @@ function validateExternalUrl(url: string): string | null {
   }
 }
 
-export default function MediaInsertMenu({ onInsert }: MediaInsertMenuProps) {
+export default function MediaInsertMenu({
+  onInsert, visibility = 'private',
+}: MediaInsertMenuProps) {
   const [panel, setPanel] = useState<Panel>('none')
   const [linkUrl, setLinkUrl] = useState('')
   const [linkTitle, setLinkTitle] = useState('')
   const [videoUrl, setVideoUrl] = useState('')
   const [error, setError] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [quota, setQuota] = useState<MediaQuota | null>(null)
   const imgInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
+
+  // Tells the user what they may upload before they pick a file, rather than
+  // after the server refuses it.
+  useEffect(() => {
+    let cancelled = false
+    fetchQuota()
+      .then(q => { if (!cancelled) setQuota(q) })
+      .catch(() => { /* the server decides anyway; the hint is optional */ })
+    return () => { cancelled = true }
+  }, [])
 
   function close() {
     setPanel('none')
@@ -43,6 +59,24 @@ export default function MediaInsertMenu({ onInsert }: MediaInsertMenuProps) {
     setVideoUrl('')
   }
 
+  /** Uploads and inserts. The server re-checks everything asserted here. */
+  async function upload(file: File, build: (url: string, name: string) => string) {
+    setUploading(true)
+    setError('')
+    try {
+      const media = await uploadMedia(file, { visibility })
+      onInsert(build(media.url, file.name))
+      close()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '上传失败，请稍后重试')
+    } finally {
+      setUploading(false)
+      // Clearing lets the same file be picked again after a failure.
+      if (imgInputRef.current) imgInputRef.current.value = ''
+      if (videoInputRef.current) videoInputRef.current.value = ''
+    }
+  }
+
   function handleImageFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -50,10 +84,11 @@ export default function MediaInsertMenu({ onInsert }: MediaInsertMenuProps) {
       setError('只允许 JPEG、PNG、WebP 或 GIF 图片')
       return
     }
-    // Simulate upload: use object URL as placeholder
-    const url = URL.createObjectURL(file)
-    onInsert(`![${file.name}](${url})`)
-    close()
+    if (quota && file.size > quota.maxImageBytes) {
+      setError(`图片不能超过 ${formatBytes(quota.maxImageBytes)}（当前 ${formatBytes(file.size)}）`)
+      return
+    }
+    void upload(file, (url, name) => `![${name}](${url})`)
   }
 
   function handleVideoFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -63,13 +98,11 @@ export default function MediaInsertMenu({ onInsert }: MediaInsertMenuProps) {
       setError('只允许 MP4 或 WebM 格式的视频')
       return
     }
-    if (file.size > MAX_VIDEO_SIZE) {
-      setError(`视频不能超过 20 MB（当前：${(file.size / 1024 / 1024).toFixed(1)} MB）`)
+    if (quota && file.size > quota.maxVideoBytes) {
+      setError(`视频不能超过 ${formatBytes(quota.maxVideoBytes)}（当前 ${formatBytes(file.size)}）`)
       return
     }
-    const url = URL.createObjectURL(file)
-    onInsert(`<video src="${url}" controls style="max-width:100%"></video>`)
-    close()
+    void upload(file, url => `<video src="${url}" controls style="max-width:100%"></video>`)
   }
 
   function handleInsertLink() {
@@ -157,14 +190,28 @@ export default function MediaInsertMenu({ onInsert }: MediaInsertMenuProps) {
                   className="hidden"
                   onChange={handleImageFile}
                 />
-                <button
-                  type="button"
-                  className="w-full rounded-[var(--radius)] border-2 border-dashed border-[color:var(--border)] py-6 text-xs text-[color:var(--muted-foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)]"
-                  onClick={() => imgInputRef.current?.click()}
-                >
-                  点击选择图片<br />
-                  <span className="opacity-60">JPEG · PNG · WebP · GIF</span>
-                </button>
+                {quota && !quota.canUploadImage ? (
+                  <p className="rounded-[var(--radius)] bg-[color:var(--secondary)] p-3 text-xs leading-6 text-[color:var(--muted-foreground)]">
+                    你的账号未开通图片上传权限。请联系管理员开通。
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={uploading}
+                    className="w-full rounded-[var(--radius)] border-2 border-dashed border-[color:var(--border)] py-6 text-xs text-[color:var(--muted-foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)] disabled:opacity-60"
+                    onClick={() => imgInputRef.current?.click()}
+                  >
+                    {uploading ? '上传中…' : (
+                      <>
+                        点击选择图片<br />
+                        <span className="opacity-60">
+                          JPEG · PNG · WebP · GIF
+                          {quota && ` · 最大 ${formatBytes(quota.maxImageBytes)}`}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                )}
               </>
             )}
 
@@ -177,14 +224,28 @@ export default function MediaInsertMenu({ onInsert }: MediaInsertMenuProps) {
                   className="hidden"
                   onChange={handleVideoFile}
                 />
-                <button
-                  type="button"
-                  className="w-full rounded-[var(--radius)] border-2 border-dashed border-[color:var(--border)] py-6 text-xs text-[color:var(--muted-foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)]"
-                  onClick={() => videoInputRef.current?.click()}
-                >
-                  点击选择视频<br />
-                  <span className="opacity-60">MP4 · WebM · 最大 20 MB</span>
-                </button>
+                {quota && !quota.canUploadVideo ? (
+                  <p className="rounded-[var(--radius)] bg-[color:var(--secondary)] p-3 text-xs leading-6 text-[color:var(--muted-foreground)]">
+                    你的账号未开通视频上传权限。请联系管理员开通。
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={uploading}
+                    className="w-full rounded-[var(--radius)] border-2 border-dashed border-[color:var(--border)] py-6 text-xs text-[color:var(--muted-foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)] disabled:opacity-60"
+                    onClick={() => videoInputRef.current?.click()}
+                  >
+                    {uploading ? '上传中…' : (
+                      <>
+                        点击选择视频<br />
+                        <span className="opacity-60">
+                          MP4 · WebM
+                          {quota && ` · 最大 ${formatBytes(quota.maxVideoBytes)}`}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                )}
               </>
             )}
 

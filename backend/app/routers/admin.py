@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .. import accounts as acc
 from ..db import get_db
-from ..models import AuditLog, Content, InviteCode, SessionToken, User
+from ..models import AuditLog, Content, InviteCode, MediaFile, SessionToken, User
 from ..security import current_user
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
@@ -149,6 +149,13 @@ def user_detail(
 
     live = select(Content).where(Content.author_id == target.id, Content.deleted_at.is_(None))
 
+    def media_count(*conditions):
+        return db.scalar(
+            select(func.count()).select_from(MediaFile).where(
+                MediaFile.owner_id == target.id, MediaFile.deleted_at.is_(None), *conditions
+            )
+        ) or 0
+
     def count_where(*conditions):
         return db.scalar(
             select(func.count()).select_from(Content).where(
@@ -178,9 +185,17 @@ def user_detail(
             "pkm": count_where(Content.type == "pkm"),
             "public": count_where(Content.visibility == "public"),
         },
-        # Uploads are not implemented yet; the shape is here so the console
-        # does not need reworking when they arrive.
-        "media_counts": {"images": 0, "videos": 0, "bytes": 0},
+        # Counts and total size only — the console audits how much space a
+        # user takes, never what they uploaded.
+        "media_counts": {
+            "images": media_count(MediaFile.kind == "image"),
+            "videos": media_count(MediaFile.kind == "video"),
+            "bytes": db.scalar(
+                select(func.coalesce(func.sum(MediaFile.size_bytes), 0)).where(
+                    MediaFile.owner_id == target.id, MediaFile.deleted_at.is_(None)
+                )
+            ) or 0,
+        },
     }
 
 

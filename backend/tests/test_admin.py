@@ -381,3 +381,22 @@ def test_the_audit_log_is_newest_first(client):
     ).json()
     assert "→ closed" in events[0]["detail"]
     assert "→ open" in events[1]["detail"]
+
+
+def test_detail_counts_media_without_revealing_it(client):
+    import io
+
+    register(client, "euan")
+    login(client, "euan")
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+    client.post("/api/v1/media", files={"file": ("secret-holiday-photo.png", io.BytesIO(png), "image/png")})
+    client.post("/api/v1/auth/logout")
+
+    sign_in_as_admin(client)
+    user_id = client.get("/api/v1/admin/users").json()[0]["id"]
+    body = client.get(f"/api/v1/admin/users/{user_id}").json()
+
+    assert body["media_counts"]["images"] == 1
+    assert body["media_counts"]["bytes"] == len(png)
+    # How much space, never what it is.
+    assert "secret-holiday-photo" not in str(body)

@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -11,6 +12,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ["LIFE_DATABASE_URL"] = "sqlite://"
 os.environ["LIFE_REGISTRATION_MODE"] = "open"
 os.environ["LIFE_SECRET_KEY"] = "test-secret"
+
+import tempfile  # noqa: E402
+_MEDIA_DIR = tempfile.mkdtemp(prefix="lifeexpanse-test-media-")
+os.environ["LIFE_MEDIA_ROOT"] = _MEDIA_DIR
 
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
@@ -64,10 +69,16 @@ def client():
     from app import email as mailer
     mailer.outbox.clear()
 
+    # Uploaded bytes are real files; each test starts with an empty directory
+    # so quota and listing assertions cannot inherit another test's uploads.
+    shutil.rmtree(_MEDIA_DIR, ignore_errors=True)
+    Path(_MEDIA_DIR).mkdir(parents=True, exist_ok=True)
+
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
     mailer.outbox.clear()
+    shutil.rmtree(_MEDIA_DIR, ignore_errors=True)
     Base.metadata.drop_all(bind=engine)
 
 

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { uploadMedia } from '../api/media'
 import LibraryCover from './LibraryCover'
 import type { Series } from '../types'
 
@@ -34,15 +35,29 @@ export default function LibraryItemForm({
 
   const label = kind === 'folder' ? '文件夹' : '系列'
 
-  function handleCover(e: React.ChangeEvent<HTMLInputElement>) {
+  const [uploadingCover, setUploadingCover] = useState(false)
+
+  async function handleCover(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
       setError('封面只支持 JPEG、PNG、WebP 或 GIF')
       return
     }
+
     setError('')
-    setCover(URL.createObjectURL(file))
+    setUploadingCover(true)
+    try {
+      // Covers appear wherever the folder does, including to visitors, so the
+      // file has to be public. An object URL would not survive a reload.
+      const media = await uploadMedia(file, { visibility: 'public' })
+      setCover(media.url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '封面上传失败')
+    } finally {
+      setUploadingCover(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -82,11 +97,16 @@ export default function LibraryItemForm({
             type="file"
             accept="image/jpeg,image/png,image/webp,image/gif"
             className="hidden"
-            onChange={handleCover}
+            onChange={e => void handleCover(e)}
           />
           <div className="mt-2 flex flex-col items-center gap-1">
-            <button type="button" onClick={() => fileRef.current?.click()} className="life-button px-2.5 py-1 text-xs">
-              上传封面
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploadingCover}
+              className="life-button px-2.5 py-1 text-xs disabled:opacity-60"
+            >
+              {uploadingCover ? '上传中…' : '上传封面'}
             </button>
             {cover && (
               <button
