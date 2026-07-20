@@ -26,6 +26,8 @@ import type { ContentItem, ContentKind, Folder, Series, Visibility } from '../ty
 
 export interface ListParams {
   author: string
+  /** Defaults to 'pkm'. */
+  type?: ContentItem['type']
   /** The signed-in user, or null for a guest. */
   viewer: string | null
   kind?: ContentKind
@@ -47,7 +49,8 @@ export async function listPkm(params: ListParams): Promise<ContentItem[]> {
   if (usingBackend()) return remote.listPkm(params)
 
   const { author, viewer } = params
-  let items = allContent.filter(c => c.type === 'pkm' && c.author === author && visibleTo(c, viewer))
+  const type = params.type ?? 'pkm'
+  let items = allContent.filter(c => c.type === type && c.author === author && visibleTo(c, viewer))
 
   if (!params.includeArchived) items = items.filter(c => !c.archived)
   if (params.kind) items = items.filter(c => c.contentKind === params.kind)
@@ -80,10 +83,13 @@ export async function getPkmBySlug(params: {
   author: string
   slug: string
   viewer: string | null
+  /** Defaults to 'pkm'. */
+  type?: ContentItem['type']
 }): Promise<ContentItem> {
   if (usingBackend()) return remote.getPkmBySlug(params)
+  const type = params.type ?? 'pkm'
   const item = allContent.find(
-    c => c.slug === params.slug && c.type === 'pkm' && c.author === params.author
+    c => c.slug === params.slug && c.type === type && c.author === params.author
   )
   // Same response whether it is missing, of the wrong type, owned by someone
   // else, or hidden — so the reply cannot be used to probe for private content.
@@ -92,10 +98,13 @@ export async function getPkmBySlug(params: {
 }
 
 export interface PkmDraft {
+  /** Defaults to 'pkm'. Thoughts and diary entries pass their own. */
+  type?: ContentItem['type']
   title: string
   body: string
   summary?: string
-  contentKind: ContentKind
+  /** Only meaningful for `pkm`. */
+  contentKind?: ContentKind
   visibility: Visibility
   tagNames: string[]
   folderIds: string[]
@@ -107,20 +116,36 @@ export interface PkmDraft {
   allowComments?: boolean
   favorite?: boolean
   archived?: boolean
+  /** Thought-specific: original writing or a quotation. */
+  thoughtType?: ContentItem['thoughtType']
+  /** Provenance for an excerpt. */
+  sourceAuthor?: string
+  sourceTitle?: string
+  sourceType?: ContentItem['sourceType']
+  sourceUrl?: string
+  sourceLocator?: string
 }
 
+/**
+ * Creates content of any type.
+ *
+ * Thoughts and diary entries go through here too. They used to write to the
+ * store directly, which meant that with a backend configured they simply were
+ * not saved — and that the ownership rule enforced here did not apply to them.
+ */
 export async function createPkm(author: string, draft: PkmDraft): Promise<ContentItem> {
   if (usingBackend()) return remote.createPkm(draft)
 
   if (!draft.title.trim()) return fail('标题不能为空')
   if (!draft.body.trim()) return fail('正文不能为空')
 
+  const type = draft.type ?? 'pkm'
   const now = new Date().toISOString()
   const item: ContentItem = {
     id: nextId('c'),
     slug: makeUniqueSlug(slugify(draft.title, `entry-${Date.now()}`)),
-    type: 'pkm',
-    contentKind: draft.contentKind,
+    type,
+    contentKind: type === 'pkm' ? draft.contentKind : undefined,
     title: draft.title.trim(),
     body: draft.body,
     summary: draft.summary?.trim() || draft.body.trim().slice(0, 80),
@@ -134,9 +159,15 @@ export async function createPkm(author: string, draft: PkmDraft): Promise<Conten
     category: draft.category,
     seoTitle: draft.seoTitle,
     seoDescription: draft.seoDescription,
-    allowComments: draft.allowComments ?? draft.contentKind === 'article',
+    allowComments: type === 'pkm' && (draft.allowComments ?? draft.contentKind === 'article'),
     favorite: draft.favorite ?? false,
     archived: draft.archived ?? false,
+    thoughtType: draft.thoughtType,
+    sourceAuthor: draft.sourceAuthor,
+    sourceTitle: draft.sourceTitle,
+    sourceType: draft.sourceType,
+    sourceUrl: draft.sourceUrl,
+    sourceLocator: draft.sourceLocator,
     ...normaliseMembership({ folderIds: draft.folderIds, seriesIds: draft.seriesIds }, folderStore),
   }
 
@@ -154,7 +185,10 @@ export async function createPkm(author: string, draft: PkmDraft): Promise<Conten
  */
 function ownedByActor(id: string, actor: string): ContentItem | null {
   const item = allContent.find(c => c.id === id)
-  if (!item || item.type !== 'pkm' || item.author !== actor) return null
+  // Type is not part of ownership: a diary entry belongs to its author exactly
+  // as a note does. Restricting this to `pkm` was what forced other types onto
+  // a separate, unchecked write path.
+  if (!item || item.author !== actor) return null
   return item
 }
 
@@ -195,6 +229,14 @@ export async function updatePkm(
     ...(patch.allowComments !== undefined ? { allowComments: patch.allowComments } : {}),
     ...(patch.favorite !== undefined ? { favorite: patch.favorite } : {}),
     ...(patch.archived !== undefined ? { archived: patch.archived } : {}),
+    ...(patch.thoughtType !== undefined ? { thoughtType: patch.thoughtType } : {}),
+    // Excerpt provenance: without these an excerpt saved with the wrong source
+    // could never be corrected.
+    ...(patch.sourceAuthor !== undefined ? { sourceAuthor: patch.sourceAuthor } : {}),
+    ...(patch.sourceTitle !== undefined ? { sourceTitle: patch.sourceTitle } : {}),
+    ...(patch.sourceType !== undefined ? { sourceType: patch.sourceType } : {}),
+    ...(patch.sourceUrl !== undefined ? { sourceUrl: patch.sourceUrl } : {}),
+    ...(patch.sourceLocator !== undefined ? { sourceLocator: patch.sourceLocator } : {}),
     ...membership,
     updatedAt: new Date().toISOString(),
   })

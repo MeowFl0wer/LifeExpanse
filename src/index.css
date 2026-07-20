@@ -395,3 +395,9 @@ textarea {
 .life-figure-actions a:hover {
   background: rgb(0 0 0 / 0.78);
 }
+
+.life-video {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--radius);
+}

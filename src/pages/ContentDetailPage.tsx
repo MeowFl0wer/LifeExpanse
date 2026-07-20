@@ -9,9 +9,10 @@ import CommentSection from '../components/CommentSection'
 import ArticleToc from '../components/ArticleToc'
 import { extractHeadings } from '../lib/toc'
 import { publishAsArticle, revertToNote, getLinkGraph, getPkmBySlug, deletePkm, type LinkGraph } from '../api/pkm'
-import { getContentBySlug, folders as allFolders, series as allSeries } from '../mockData'
+import { folders as allFolders, series as allSeries } from '../mockData'
 import type { ContentItem } from '../types'
 import { locationTrail } from '../lib/library'
+import { safeLinkUrl } from '../lib/safeUrl'
 import { useCurrentUser } from '../auth'
 
 function formatDate(dateStr: string): string {
@@ -55,24 +56,36 @@ interface ContentDetailPageProps {
   section: 'thoughts' | 'diary' | 'pkm'
 }
 
+/** A route section maps to exactly one content type. */
+const SECTION_TYPE: Record<ContentDetailPageProps['section'], ContentItem['type']> = {
+  thoughts: 'thought',
+  pkm: 'pkm',
+  diary: 'diary',
+}
+
 export default function ContentDetailPage({ section }: ContentDetailPageProps) {
   const { username, slug } = useParams<{ username: string; slug: string }>()
   const navigate = useNavigate()
   const currentUser = useCurrentUser()
-  // PKM goes through the data layer so the author/type/visibility rules are
-  // applied in one place instead of being re-derived here.
+  // Every section goes through the data layer so the author/type/visibility
+  // rules are applied in one place. Reading the store directly for thoughts
+  // and diary meant a backend-saved entry 404'd here.
   const [pkmItem, setPkmItem] = useState<ContentItem | null | undefined>(undefined)
   useEffect(() => {
-    if (section !== 'pkm') { setPkmItem(undefined); return }
     let cancelled = false
-    getPkmBySlug({ author: username ?? '', slug: slug ?? '', viewer: currentUser })
+    getPkmBySlug({
+      author: username ?? '',
+      slug: slug ?? '',
+      viewer: currentUser,
+      type: SECTION_TYPE[section],
+    })
       .then(found => { if (!cancelled) setPkmItem(found) })
       .catch(() => { if (!cancelled) setPkmItem(null) })
     return () => { cancelled = true }
   }, [section, username, slug, currentUser])
 
-  const item = section === 'pkm' ? pkmItem ?? undefined : getContentBySlug(slug ?? '')
-  const loadingPkm = section === 'pkm' && pkmItem === undefined
+  const item = pkmItem ?? undefined
+  const loadingPkm = pkmItem === undefined
   const [localContentKind, setLocalContentKind] = useState(item?.contentKind)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [links, setLinks] = useState<LinkGraph | null>(null)
@@ -306,9 +319,21 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
               {item.sourceUrl && (
                 <p>
                   来源链接：{' '}
-                  <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[color:var(--primary)] hover:underline">
-                    {item.sourceUrl}
-                  </a>
+                  {/* Same rule as body links: a stored `javascript:` would be a
+                      working attack the moment a reader clicked it. Refused
+                      addresses stay visible as text. */}
+                  {safeLinkUrl(item.sourceUrl) ? (
+                    <a
+                      href={safeLinkUrl(item.sourceUrl)!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[color:var(--primary)] hover:underline"
+                    >
+                      {item.sourceUrl}
+                    </a>
+                  ) : (
+                    <span className="break-all">{item.sourceUrl}</span>
+                  )}
                 </p>
               )}
             </div>

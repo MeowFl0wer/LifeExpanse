@@ -38,13 +38,16 @@ function renderCreate(type = 'note') {
 }
 
 async function renderEdit(slug: string) {
-  return render(
+  const view = render(
     <MemoryRouter initialEntries={[`/euan/pkm/${slug}/edit`]}>
       <Routes>
         <Route path="/:username/pkm/:slug/edit" element={<ContentEditPage section="pkm" />} />
       </Routes>
     </MemoryRouter>
   )
+  // The item is fetched, so the form is not on screen for the first frame.
+  await waitFor(() => expect(screen.getByLabelText('正文')).toBeTruthy())
+  return view
 }
 
 async function makeNote() {
@@ -235,5 +238,129 @@ describe('edit page autosave', () => {
     await waitFor(() =>
       expect(allContent.find(c => c.id === note.id)!.body).toBe('最终内容'), { timeout: 3000 })
     expect(await loadDraft(editKey('euan', note.id))).toBeNull()
+  })
+})
+
+/**
+ * Excerpt provenance is part of the draft.
+ *
+ * Without it, changing only the source left the page looking unmodified: no
+ * "unsaved" state, no leave warning, and nothing autosaved — so the edit was
+ * silently lost on navigating away.
+ */
+describe('excerpt provenance is tracked as unsaved work', () => {
+  async function renderThoughtEdit(slug: string) {
+    const view = render(
+      <MemoryRouter initialEntries={[`/euan/thoughts/${slug}/edit`]}>
+        <Routes>
+          <Route
+            path="/:username/thoughts/:slug/edit"
+            element={<ContentEditPage section="thoughts" />}
+          />
+        </Routes>
+      </MemoryRouter>
+    )
+    await waitFor(() => expect(screen.getByLabelText('正文')).toBeTruthy())
+    return view
+  }
+
+  async function makeExcerpt() {
+    return createPkm('euan', {
+      type: 'thought',
+      thoughtType: 'excerpt',
+      title: `摘录 ${Math.random().toString(36).slice(2, 7)}`,
+      body: '引用的内容',
+      visibility: 'public',
+      tagNames: [], folderIds: [], seriesIds: [],
+      sourceAuthor: '原作者',
+    })
+  }
+
+  it('autosaves a change to the source author alone', async () => {
+    const user = userEvent.setup()
+    const excerpt = await makeExcerpt()
+    await renderThoughtEdit(excerpt.slug)
+
+    await user.clear(screen.getByLabelText('作者或说话者'))
+    await user.type(screen.getByLabelText('作者或说话者'), '改过的作者')
+
+    await waitFor(async () => {
+      const draft = await loadDraft<{ sourceAuthor: string }>(editKey('euan', excerpt.id))
+      expect(draft?.data.sourceAuthor).toBe('改过的作者')
+    }, { timeout: 3000 })
+  })
+
+  it('autosaves a change to the source link alone', async () => {
+    const user = userEvent.setup()
+    const excerpt = await makeExcerpt()
+    await renderThoughtEdit(excerpt.slug)
+
+    await user.type(screen.getByLabelText('来源链接'), 'https://example.com/x')
+
+    await waitFor(async () => {
+      const draft = await loadDraft<{ sourceUrl: string }>(editKey('euan', excerpt.id))
+      expect(draft?.data.sourceUrl).toBe('https://example.com/x')
+    }, { timeout: 3000 })
+  })
+
+  // The reported bug: discarding restored the visible fields but left the
+  // source values from the draft in place, and saving then wrote them back.
+  it('discarding a restored draft puts the source fields back', async () => {
+    const user = userEvent.setup()
+    const excerpt = await makeExcerpt()
+    const first = await renderThoughtEdit(excerpt.slug)
+
+    await user.clear(screen.getByLabelText('作者或说话者'))
+    await user.type(screen.getByLabelText('作者或说话者'), '草稿里的作者')
+    await user.type(screen.getByLabelText('来源链接'), 'https://example.com/draft')
+    await waitFor(async () =>
+      expect(await loadDraft(editKey('euan', excerpt.id))).not.toBeNull(), { timeout: 3000 })
+    first.unmount()
+
+    await renderThoughtEdit(excerpt.slug)
+    await waitFor(() => expect(screen.getByText('已恢复未保存的草稿')).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: '放弃草稿' }))
+
+    // Back to what is stored, not what the draft held.
+    await waitFor(() =>
+      expect((screen.getByLabelText('作者或说话者') as HTMLInputElement).value)
+        .toBe('原作者'))
+    expect((screen.getByLabelText('来源链接') as HTMLInputElement).value).toBe('')
+  })
+
+  it('discarding also puts the ordinary fields back', async () => {
+    const user = userEvent.setup()
+    const excerpt = await makeExcerpt()
+    const first = await renderThoughtEdit(excerpt.slug)
+
+    await user.clear(screen.getByLabelText('正文'))
+    await user.type(screen.getByLabelText('正文'), '草稿正文')
+    await waitFor(async () =>
+      expect(await loadDraft(editKey('euan', excerpt.id))).not.toBeNull(), { timeout: 3000 })
+    first.unmount()
+
+    await renderThoughtEdit(excerpt.slug)
+    await waitFor(() => expect(screen.getByText('已恢复未保存的草稿')).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: '放弃草稿' }))
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('正文') as HTMLTextAreaElement).value).toBe('引用的内容'))
+  })
+
+  it('restores the source fields from a draft', async () => {
+    const user = userEvent.setup()
+    const excerpt = await makeExcerpt()
+    const first = await renderThoughtEdit(excerpt.slug)
+
+    await user.clear(screen.getByLabelText('作者或说话者'))
+    await user.type(screen.getByLabelText('作者或说话者'), '离开前改的作者')
+    await waitFor(async () =>
+      expect(await loadDraft(editKey('euan', excerpt.id))).not.toBeNull(), { timeout: 3000 })
+    first.unmount()
+
+    await renderThoughtEdit(excerpt.slug)
+    await waitFor(() =>
+      expect((screen.getByLabelText('作者或说话者') as HTMLInputElement).value)
+        .toBe('离开前改的作者'))
   })
 })

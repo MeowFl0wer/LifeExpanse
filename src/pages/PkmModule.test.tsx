@@ -151,19 +151,22 @@ describe('links between notes', () => {
 describe('editor article fields', () => {
   beforeEach(() => { clearCurrentUser(); setCurrentUser('euan') })
 
-  function renderEdit(slug: string) {
-    return render(
+  async function renderEdit(slug: string) {
+    const view = render(
       <MemoryRouter initialEntries={[`/euan/pkm/${slug}/edit`]}>
         <Routes>
           <Route path="/:username/pkm/:slug/edit" element={<ContentEditPage section="pkm" />} />
         </Routes>
       </MemoryRouter>
     )
+    // The editor fetches its item, so the form is not there on the first frame.
+    await waitFor(() => expect(screen.getByLabelText('正文')).toBeTruthy())
+    return view
   }
 
   it('exposes summary, favourite and archive for any note', async () => {
     const note = await makeNote()
-    renderEdit(note.slug)
+    await renderEdit(note.slug)
 
     expect(screen.getByLabelText('摘要')).toBeTruthy()
     expect(screen.getByLabelText('收藏')).toBeTruthy()
@@ -172,12 +175,12 @@ describe('editor article fields', () => {
 
   it('shows article-only fields only for articles', async () => {
     const note = await makeNote()
-    const { unmount } = renderEdit(note.slug)
+    const { unmount } = await renderEdit(note.slug)
     expect(screen.queryByLabelText('分类')).toBeNull()
     unmount()
 
     const article = await makeNote({ contentKind: 'article' })
-    renderEdit(article.slug)
+    await renderEdit(article.slug)
     expect(screen.getByLabelText('分类')).toBeTruthy()
     expect(screen.getByLabelText('SEO 标题')).toBeTruthy()
   })
@@ -185,7 +188,7 @@ describe('editor article fields', () => {
   it('saves the summary', async () => {
     const user = userEvent.setup()
     const note = await makeNote()
-    renderEdit(note.slug)
+    await renderEdit(note.slug)
 
     await user.clear(screen.getByLabelText('摘要'))
     await user.type(screen.getByLabelText('摘要'), '我写的摘要')

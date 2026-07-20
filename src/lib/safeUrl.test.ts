@@ -1,0 +1,94 @@
+import { describe, it, expect } from 'vitest'
+import { safeLinkUrl, safeMediaUrl } from './safeUrl'
+
+describe('links a reader may follow', () => {
+  it('allows https', () => {
+    expect(safeLinkUrl('https://example.com/a')).toBe('https://example.com/a')
+  })
+
+  it('allows mailto', () => {
+    expect(safeLinkUrl('mailto:someone@example.com')).toBe('mailto:someone@example.com')
+  })
+
+  it('allows internal routes and anchors', () => {
+    expect(safeLinkUrl('/euan/pkm/note')).toBe('/euan/pkm/note')
+    expect(safeLinkUrl('#section')).toBe('#section')
+  })
+
+  // The one that started this: escaping the body does not help, because the
+  // anchor is HTML the renderer generates itself.
+  it('refuses javascript:', () => {
+    expect(safeLinkUrl('javascript:alert(1)')).toBeNull()
+    expect(safeLinkUrl('JaVaScRiPt:alert(1)')).toBeNull()
+  })
+
+  // Browsers ignore whitespace and control characters when parsing a scheme,
+  // so the check has to see the same string they do.
+  it('refuses javascript: hidden behind whitespace or control characters', () => {
+    expect(safeLinkUrl('  javascript:alert(1)')).toBeNull()
+    expect(safeLinkUrl('java\tscript:alert(1)')).toBeNull()
+    expect(safeLinkUrl('java\nscript:alert(1)')).toBeNull()
+    // Escapes, not literal bytes: a literal NUL makes Git treat the file
+    // as binary and every future diff and blame becomes unreadable.
+    expect(safeLinkUrl('java\u0000script:alert(1)')).toBeNull()
+    expect(safeLinkUrl('java\u200bscript:alert(1)')).toBeNull()
+    expect(safeLinkUrl('java\ufeffscript:alert(1)')).toBeNull()
+  })
+
+  it('refuses data: and vbscript:', () => {
+    expect(safeLinkUrl('data:text/html,<script>alert(1)</script>')).toBeNull()
+    expect(safeLinkUrl('vbscript:msgbox(1)')).toBeNull()
+  })
+
+  // An allowlist refuses an unknown scheme by default, without anyone having
+  // had to think of it first.
+  it('refuses a scheme nobody listed', () => {
+    expect(safeLinkUrl('file:///etc/passwd')).toBeNull()
+    expect(safeLinkUrl('ftp://example.com')).toBeNull()
+    expect(safeLinkUrl('intent://evil')).toBeNull()
+  })
+
+  it('refuses plain http', () => {
+    expect(safeLinkUrl('http://example.com')).toBeNull()
+  })
+
+  // A leading slash is not enough: this leaves the site.
+  it('refuses a protocol-relative address', () => {
+    expect(safeLinkUrl('//evil.example/a')).toBeNull()
+  })
+
+  it('refuses a bare host rather than guessing a scheme', () => {
+    expect(safeLinkUrl('example.com/page')).toBeNull()
+  })
+
+  it('refuses empty input', () => {
+    expect(safeLinkUrl('')).toBeNull()
+    expect(safeLinkUrl('   ')).toBeNull()
+  })
+})
+
+describe('media sources', () => {
+  it('allows managed media paths', () => {
+    expect(safeMediaUrl('/api/v1/media/abc123')).toBe('/api/v1/media/abc123')
+  })
+
+  it('allows https', () => {
+    expect(safeMediaUrl('https://cdn.example.com/a.png')).toBe('https://cdn.example.com/a.png')
+  })
+
+  // Media loads without the reader doing anything, so this is stricter than
+  // links: data:text/html in the wrong element is a document, not a picture.
+  it('refuses data:', () => {
+    expect(safeMediaUrl('data:text/html,<script>alert(1)</script>')).toBeNull()
+    expect(safeMediaUrl('data:image/png;base64,AAAA')).toBeNull()
+  })
+
+  it('refuses javascript: and mailto:', () => {
+    expect(safeMediaUrl('javascript:alert(1)')).toBeNull()
+    expect(safeMediaUrl('mailto:a@b.com')).toBeNull()
+  })
+
+  it('refuses a protocol-relative address', () => {
+    expect(safeMediaUrl('//evil.example/a.png')).toBeNull()
+  })
+})

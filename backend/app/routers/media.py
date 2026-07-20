@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status,
+)
 from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import storage
+from .. import storage, thumbnails
 from ..config import get_settings
 from ..db import get_db
 from ..models import AuditLog, MediaFile, User
@@ -55,6 +57,7 @@ def _media_out(media: MediaFile) -> dict:
         "visibility": media.visibility,
         "original_name": media.original_name,
         "has_thumbnail": media.has_thumbnail,
+        "thumbnail_state": media.thumbnail_state,
         "content_id": media.content_id,
     }
 
@@ -69,6 +72,7 @@ def _visible_to(media: MediaFile, viewer: User | None) -> bool:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def upload(
+    background: BackgroundTasks,
     file: UploadFile = File(...),
     visibility: str = Query("private", pattern="^(public|private)$"),
     # An avatar is part of having an account, so it is not gated on the
@@ -112,10 +116,6 @@ async def upload(
 
     media_id = storage.new_media_id()
     digest = storage.save(media_id, sniffed.mime, data)
-    # Display uses this; the original is only fetched when a reader asks to
-    # see or download it. Small images get none — there would be nothing saved.
-    # Videos get a poster frame, so a page of clips is not a page of grey boxes.
-    has_thumb = storage.make_thumbnail(media_id, sniffed.mime, data)
 
     media = MediaFile(
         id=media_id,
@@ -127,11 +127,20 @@ async def upload(
         # Stored for display only; it is never used to build a path.
         original_name=(file.filename or "")[:255],
         visibility="public" if as_avatar else visibility,
-        has_thumbnail=has_thumb,
+        # Made after the response. Until then display falls back to the
+        # original, which is correct just not as cheap.
+        has_thumbnail=False,
+        thumbnail_state="pending",
     )
     db.add(media)
     db.add(AuditLog(actor=user.username, event="media_uploaded", detail=f"{sniffed.kind} {len(data)}B"))
     db.commit()
+
+    # Decoding a large video takes seconds; making the uploader wait for a
+    # picture they have not asked to see yet is the wrong trade. Anything that
+    # does not finish is picked up by the startup pass, so a crash here costs
+    # a retry rather than a permanently missing thumbnail.
+    background.add_task(thumbnails.generate_for, media.id)
 
     return _media_out(media)
 

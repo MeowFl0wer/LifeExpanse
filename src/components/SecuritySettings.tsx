@@ -58,8 +58,8 @@ function SecondProof({
   return (
     <div className="space-y-3 rounded-[var(--radius)] bg-[color:var(--secondary)] p-4">
       <p className="text-xs leading-6 text-[color:var(--muted-foreground)]">
-        这一步需要第二重验证。
-        {totpEnabled ? '用邮箱验证码或两步验证码都可以。' : '请使用邮箱验证码。'}
+        此操作需要二次验证。
+        {totpEnabled ? '可使用邮箱验证码或两步验证码。' : '请使用邮箱验证码。'}
       </p>
 
       <div className="flex flex-wrap items-end gap-2">
@@ -100,7 +100,7 @@ function SecondProof({
             className="life-input w-full px-3 py-2 text-sm tracking-widest"
           />
           <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">
-            邮箱已经收不到信时，用这里。
+            当邮箱无法接收验证码时使用。
           </p>
         </div>
       )}
@@ -187,7 +187,8 @@ function PasswordSection({ totpEnabled }: { totpEnabled: boolean }) {
     <section>
       <h2 className="text-base font-medium text-[color:var(--foreground)]">修改密码</h2>
       <p className="mt-1 text-sm leading-6 text-[color:var(--muted-foreground)]">
-        除了当前密码，还需要一次邮箱验证——只知道密码不足以改密码。
+        修改密码需同时验证当前密码与邮箱验证码。仅凭当前密码不足以完成修改，
+        以防设备在未锁定状态下被他人操作。
       </p>
 
       <form onSubmit={e => void submit(e)} className="mt-4 space-y-4 sm:max-w-md">
@@ -299,8 +300,8 @@ function EmailSection({ totpEnabled }: { totpEnabled: boolean }) {
     <section className="border-t border-[color:var(--border)] pt-8">
       <h2 className="text-base font-medium text-[color:var(--foreground)]">更换主邮箱</h2>
       <p className="mt-1 text-sm leading-6 text-[color:var(--muted-foreground)]">
-        新旧两个地址都要验证一次。更换成功后，旧邮箱会收到一封通知——
-        如果不是你本人操作，那是你唯一的察觉机会。
+        新旧邮箱均需完成验证。更换成功后，系统会向原邮箱发送变更通知，
+        以便在账号被他人操作时及时察觉。
       </p>
 
       <form onSubmit={e => void submit(e)} className="mt-4 space-y-4 sm:max-w-md">
@@ -469,8 +470,8 @@ function BackupEmailSection({ totpEnabled }: { totpEnabled: boolean }) {
     <section className="border-t border-[color:var(--border)] pt-8">
       <h2 className="text-base font-medium text-[color:var(--foreground)]">备用邮箱</h2>
       <p className="mt-1 text-sm leading-6 text-[color:var(--muted-foreground)]">
-        备用邮箱可以用来登录和找回密码。它是进入账号的第二道门，
-        所以绑定和解绑都需要当前密码加一次验证。
+        备用邮箱可用于登录与找回密码。由于它同样是账号的访问凭据，
+        绑定与解绑均需验证当前密码及邮箱验证码。
       </p>
 
       {bound === null ? (
@@ -639,7 +640,9 @@ function TwoFactorSection({
     <section className="border-t border-[color:var(--border)] pt-8">
       <h2 className="text-base font-medium text-[color:var(--foreground)]">两步验证</h2>
       <p className="mt-1 text-sm leading-6 text-[color:var(--muted-foreground)]">
-        用 Authenticator 应用生成动态码。开启后，登录除了密码还需要这个码。
+        为账号增加一层独立于密码的验证。开启后，登录时除密码外还需提供
+        身份验证器（如 Google Authenticator、1Password）生成的一次性动态口令。
+        即使密码泄露，他人也无法登录。
       </p>
 
       {/* Shown once, right after enabling. Nothing can display them again. */}
@@ -647,8 +650,8 @@ function TwoFactorSection({
         <div className="life-surface mt-4 p-5">
           <p className="text-sm font-medium text-[color:var(--foreground)]">恢复码</p>
           <p className="mt-1 text-xs leading-6 text-[#B23B3B]">
-            请立刻保存到安全的地方。这些码只显示这一次，关掉就再也看不到了。
-            手机丢失时，它们是你唯一的入口。
+            请立即保存至安全位置。恢复码仅显示一次，关闭后无法再次查看。
+            当身份验证器不可用时（设备丢失或更换），恢复码是登录本账号的唯一方式。
           </p>
           <ul className="mt-3 grid grid-cols-2 gap-1.5 font-mono text-xs text-[color:var(--foreground)]">
             {codes.map(c => <li key={c}>{c}</li>)}
@@ -710,7 +713,7 @@ function TwoFactorSection({
             </div>
             <Field
               id="tf-verify" label="输入验证器显示的 6 位数字" placeholder="000000" inputMode="numeric"
-              hint="填对了才会真正开启——扫错二维码就开启的话，你会被自己锁在门外。"
+              hint="验证通过后两步验证才会开启。若密钥添加有误而此时已启用，你将无法再登录本账号。"
               value={code} onChange={e => { setCode(e.target.value); setError('') }}
             />
             <Feedback error={error} />

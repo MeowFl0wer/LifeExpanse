@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import media_links
+from . import media_links, thumbnails
 from .bootstrap import ensure_admin
 from .config import get_settings
 from .db import SessionLocal
@@ -39,6 +39,11 @@ async def lifespan(_: FastAPI):
         swept = media_links.sweep(db)
         if swept:
             logging.getLogger("lifeexpanse").info("swept %d unreferenced media files", swept)
+
+    # Anything whose generation did not finish — the process died, or an
+    # earlier attempt failed. Without this, a crash between the response and
+    # the background task would leave a thumbnail missing forever.
+    thumbnails.backfill()
     yield
 
 

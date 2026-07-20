@@ -62,6 +62,13 @@ def client():
     global _TestingSession
     _TestingSession = TestingSession
 
+    # Background tasks open their own session on the application engine, which
+    # in tests is a *different* in-memory database — a fresh one per thread.
+    # Pointing the factory at the test engine is what makes a background task
+    # see the same rows the request just wrote.
+    from app import thumbnails
+    thumbnails.SessionLocal = TestingSession
+
     app.dependency_overrides[get_db] = override_get_db
 
     # Each test starts with an empty inbox, so `last_code_for` cannot pick up

@@ -3,17 +3,16 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import VisibilityBadge from '../components/VisibilityBadge'
 import MediaInsertMenu from '../components/MediaInsertMenu'
 import MarkdownRenderer from '../components/MarkdownRenderer'
-import {
-  getContentBySlug, updateContentItem,
-  folders as allFolders, series as allSeries, nextId } from '../mockData'
 import { extractHashTags } from '../lib/library'
 import LibraryPicker from '../components/LibraryPicker'
-import { updatePkm, createFolder, createSeriesEntry } from '../api/pkm'
+import {
+  updatePkm, getPkmBySlug, createFolder, createSeriesEntry, listFolders, listSeries,
+} from '../api/pkm'
 import AutosaveIndicator from '../components/AutosaveStatus'
 import DraftRestoredBanner from '../components/DraftRestoredBanner'
 import { useAutosave } from '../hooks/useAutosave'
 import { loadDraft, editKey, type Draft } from '../api/drafts'
-import type { ContentKind, ThoughtType, Visibility } from '../types'
+import type { ContentItem, ContentKind, Folder, Series, ThoughtSourceType, ThoughtType, Visibility } from '../types'
 import { useCurrentUser } from '../auth'
 
 type Tab = 'write' | 'preview'
@@ -26,6 +25,14 @@ interface EditorDraft {
   visibility: Visibility
   contentKind: ContentKind
   thoughtType: ThoughtType
+  // Excerpt provenance. Without these in the draft, changing only the source
+  // left the page looking unmodified: no "unsaved" state, no leave warning,
+  // and nothing autosaved.
+  sourceAuthor: string
+  sourceTitle: string
+  sourceType: ThoughtSourceType
+  sourceUrl: string
+  sourceLocator: string
   allowComments: boolean
   summary: string
   cover: string
@@ -42,11 +49,62 @@ interface ContentEditPageProps {
   section: 'thoughts' | 'diary' | 'pkm'
 }
 
+/** A route section maps to exactly one content type. */
+const SECTION_TYPE: Record<ContentEditPageProps['section'], ContentItem['type']> = {
+  thoughts: 'thought',
+  pkm: 'pkm',
+  diary: 'diary',
+}
+
 export default function ContentEditPage({ section }: ContentEditPageProps) {
   const { username, slug } = useParams<{ username: string; slug: string }>()
   const navigate = useNavigate()
   const currentUser = useCurrentUser()
-  const item = getContentBySlug(slug ?? '')
+  // Loaded through the data layer, not the store: with a backend configured
+  // the store does not have it, so the editor opened blank on a real entry.
+  const [item, setItem] = useState<ContentItem | null | undefined>(undefined)
+
+  /** Fills every field from a freshly loaded item. */
+  function hydrate(found: ContentItem) {
+    setTitle(found.title)
+    setBody(found.body)
+    setTagInput(found.tags.map(t => t.name).join(', '))
+    setVisibility(found.visibility)
+    setContentKind(found.contentKind ?? 'note')
+    setThoughtType(found.thoughtType ?? 'original')
+    setSourceAuthor(found.sourceAuthor ?? '')
+    setSourceTitle(found.sourceTitle ?? '')
+    setSourceType(found.sourceType ?? 'book')
+    setSourceUrl(found.sourceUrl ?? '')
+    setSourceLocator(found.sourceLocator ?? '')
+    setAllowComments(found.allowComments ?? false)
+    setSummary(found.summary ?? '')
+    setCover(found.cover ?? '')
+    setCategory(found.category ?? '')
+    setSeoTitle(found.seoTitle ?? '')
+    setSeoDescription(found.seoDescription ?? '')
+    setFavorite(found.favorite ?? false)
+    setArchived(found.archived ?? false)
+    setFolderIds(found.folderIds ?? [])
+    setSeriesIds(found.seriesIds ?? [])
+  }
+  useEffect(() => {
+    let cancelled = false
+    getPkmBySlug({
+      author: username ?? '',
+      slug: slug ?? '',
+      viewer: currentUser,
+      type: SECTION_TYPE[section],
+    })
+      .then(found => {
+        if (cancelled) return
+        // Same update as the item, so the form is never on screen empty.
+        hydrate(found)
+        setItem(found)
+      })
+      .catch(() => { if (!cancelled) setItem(null) })
+    return () => { cancelled = true }
+  }, [username, slug, currentUser, section])
 
   const [title, setTitle] = useState(item?.title ?? '')
   const [body, setBody] = useState(item?.body ?? '')
@@ -54,6 +112,14 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
   const [visibility, setVisibility] = useState<Visibility>(item?.visibility ?? 'public')
   const [contentKind, setContentKind] = useState<ContentKind>(item?.contentKind ?? 'note')
   const [thoughtType, setThoughtType] = useState<ThoughtType>(item?.thoughtType ?? 'original')
+  // Excerpt provenance. Editable here because an excerpt saved with the wrong
+  // source used to be stuck with it: these fields existed only on the create
+  // form and never reached the update path.
+  const [sourceAuthor, setSourceAuthor] = useState(item?.sourceAuthor ?? '')
+  const [sourceTitle, setSourceTitle] = useState(item?.sourceTitle ?? '')
+  const [sourceType, setSourceType] = useState<ThoughtSourceType>(item?.sourceType ?? 'book')
+  const [sourceUrl, setSourceUrl] = useState(item?.sourceUrl ?? '')
+  const [sourceLocator, setSourceLocator] = useState(item?.sourceLocator ?? '')
   const [allowComments, setAllowComments] = useState(item?.allowComments ?? false)
   const [summary, setSummary] = useState(item?.summary ?? '')
   const [cover, setCover] = useState(item?.cover ?? '')
@@ -64,7 +130,24 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
   const [archived, setArchived] = useState(item?.archived ?? false)
   const [folderIds, setFolderIds] = useState<string[]>(item?.folderIds ?? [])
   const [seriesIds, setSeriesIds] = useState<string[]>(item?.seriesIds ?? [])
-  const [, bumpLibrary] = useState(0)
+
+
+  const [libraryTick, bumpLibrary] = useState(0)
+  const [allFolders, setAllFolders] = useState<Folder[]>([])
+  const [allSeries, setAllSeries] = useState<Series[]>([])
+  useEffect(() => {
+    if (!item) return
+    let cancelled = false
+    void Promise.all([
+      listFolders(item.author, currentUser),
+      listSeries(item.author, currentUser),
+    ]).then(([fs, ss]) => {
+      if (cancelled) return
+      setAllFolders(fs)
+      setAllSeries(ss)
+    })
+    return () => { cancelled = true }
+  }, [item?.author, currentUser, libraryTick])
   const [tab, setTab] = useState<Tab>('write')
   const [restored, setRestored] = useState<Draft<EditorDraft> | null>(null)
   const [draftChecked, setDraftChecked] = useState(false)
@@ -78,6 +161,11 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
     visibility !== (item?.visibility ?? 'public') ||
     contentKind !== (item?.contentKind ?? 'note') ||
     thoughtType !== (item?.thoughtType ?? 'original') ||
+    sourceAuthor !== (item?.sourceAuthor ?? '') ||
+    sourceTitle !== (item?.sourceTitle ?? '') ||
+    sourceType !== (item?.sourceType ?? 'book') ||
+    sourceUrl !== (item?.sourceUrl ?? '') ||
+    sourceLocator !== (item?.sourceLocator ?? '') ||
     allowComments !== (item?.allowComments ?? false) ||
     summary !== (item?.summary ?? '') ||
     cover !== (item?.cover ?? '') ||
@@ -104,6 +192,7 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
   // Everything the editor holds, so a restored draft can rebuild the form.
   const draftValue: EditorDraft = {
     title, body, tagInput, visibility, contentKind, thoughtType, allowComments,
+    sourceAuthor, sourceTitle, sourceType, sourceUrl, sourceLocator,
     summary, cover, category, seoTitle, seoDescription, favorite, archived,
     folderIds, seriesIds,
   }
@@ -129,6 +218,11 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
         setVisibility(d.visibility)
         setContentKind(d.contentKind)
         setThoughtType(d.thoughtType)
+        setSourceAuthor(d.sourceAuthor ?? '')
+        setSourceTitle(d.sourceTitle ?? '')
+        setSourceType(d.sourceType ?? 'book')
+        setSourceUrl(d.sourceUrl ?? '')
+        setSourceLocator(d.sourceLocator ?? '')
         setAllowComments(d.allowComments)
         setSummary(d.summary)
         setCover(d.cover)
@@ -168,45 +262,46 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
         ...extractHashTags(body),
       ])
     )
-    // PKM writes go through the data layer so ownership is enforced there;
-    // other types still update the store directly for now.
-    if (item!.type === 'pkm') {
-      try {
-        await updatePkm(item!.id, currentUser!, {
-          title: title.trim(),
-          body,
-          summary: summary.trim(),
-          visibility,
-          contentKind,
-          allowComments,
-          tagNames,
-          folderIds,
-          seriesIds,
-          cover: cover.trim() || undefined,
-          category: category.trim() || undefined,
-          seoTitle: seoTitle.trim() || undefined,
-          seoDescription: seoDescription.trim() || undefined,
-          favorite,
-          archived,
-        })
-      } catch (err) {
-        setSaving(false)
-        alert(err instanceof Error ? err.message : '保存失败，请重试。')
-        return
-      }
-    } else {
-      updateContentItem(item!.id, {
+    // Every type goes through the data layer: ownership is enforced there, and
+    // with a backend configured this is the only path that actually persists.
+    try {
+      await updatePkm(item!.id, currentUser!, {
         title: title.trim(),
         body,
+        summary: summary.trim(),
         visibility,
         allowComments,
-        summary: summary.trim(),
+        tagNames,
         favorite,
         archived,
-        tags: tagNames.map(name => ({ id: nextId('tag'), name })),
-        ...(item!.type === 'thought' ? { thoughtType } : {}),
-        updatedAt: new Date().toISOString(),
+        ...(item!.type === 'pkm'
+          ? {
+              contentKind,
+              folderIds,
+              seriesIds,
+              cover: cover.trim() || undefined,
+              category: category.trim() || undefined,
+              seoTitle: seoTitle.trim() || undefined,
+              seoDescription: seoDescription.trim() || undefined,
+            }
+          : {}),
+        ...(item!.type === 'thought'
+          ? {
+              thoughtType,
+              // Provenance is editable now. It used to be create-only, so an
+              // excerpt saved with the wrong source was stuck with it.
+              sourceAuthor: thoughtType === 'excerpt' ? sourceAuthor.trim() : '',
+              sourceTitle: thoughtType === 'excerpt' ? sourceTitle.trim() : '',
+              sourceType: thoughtType === 'excerpt' ? sourceType : undefined,
+              sourceUrl: thoughtType === 'excerpt' ? sourceUrl.trim() : '',
+              sourceLocator: thoughtType === 'excerpt' ? sourceLocator.trim() : '',
+            }
+          : {}),
       })
+    } catch (err) {
+      setSaving(false)
+      alert(err instanceof Error ? err.message : '保存失败，请重试。')
+      return
     }
 
     autosave.discard()
@@ -221,7 +316,15 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
     setBody(prev => prev + '\n\n' + markdown)
   }, [])
 
-  if (!item) {
+  if (item === undefined) {
+    return (
+      <div className="life-page flex min-h-screen items-center justify-center">
+        <p className="text-sm text-[color:var(--muted-foreground)]">加载中…</p>
+      </div>
+    )
+  }
+
+  if (item === null) {
     return (
       <div className="life-page flex min-h-screen items-center justify-center">
         <p className="text-sm text-[color:var(--muted-foreground)]">内容不存在</p>
@@ -324,23 +427,10 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
                 restored.baseUpdatedAt && item.updatedAt && restored.baseUpdatedAt !== item.updatedAt
               )}
               onDiscard={() => {
-                // Back to what is actually stored.
-                setTitle(item.title)
-                setBody(item.body)
-                setTagInput(item.tags.map(t => t.name).join(', '))
-                setVisibility(item.visibility)
-                setContentKind(item.contentKind ?? 'note')
-                setThoughtType(item.thoughtType ?? 'original')
-                setAllowComments(item.allowComments ?? false)
-                setSummary(item.summary ?? '')
-                setCover(item.cover ?? '')
-                setCategory(item.category ?? '')
-                setSeoTitle(item.seoTitle ?? '')
-                setSeoDescription(item.seoDescription ?? '')
-                setFavorite(item.favorite ?? false)
-                setArchived(item.archived ?? false)
-                setFolderIds(item.folderIds ?? [])
-                setSeriesIds(item.seriesIds ?? [])
+                // Back to what is actually stored. Same function the initial
+                // load uses: a second hand-written list of every field is
+                // exactly how the source fields got left behind before.
+                hydrate(item)
                 autosave.discard()
                 setRestored(null)
               }}
@@ -543,8 +633,8 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
               )}
 
               <LibraryPicker
-                folders={allFolders.filter(f => f.owner === item.author)}
-                series={allSeries.filter(s => s.owner === item.author)}
+                folders={allFolders}
+                series={allSeries}
                 folderIds={folderIds}
                 seriesIds={seriesIds}
                 onChange={next => { setFolderIds(next.folderIds); setSeriesIds(next.seriesIds) }}
@@ -559,6 +649,81 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
                   return entry.id
                 }}
               />
+            </div>
+          )}
+
+          {/* Excerpt provenance. Editable here because an excerpt saved with
+              the wrong source used to be stuck with it — these fields existed
+              only on the create form. */}
+          {item.type === 'thought' && thoughtType === 'excerpt' && (
+            <div className="grid gap-4 border-b border-[color:var(--border)] py-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="src-author" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                  作者或说话者
+                </label>
+                <input
+                  id="src-author"
+                  value={sourceAuthor}
+                  onChange={e => setSourceAuthor(e.target.value)}
+                  className="life-input w-full px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="src-title" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                  作品名称
+                </label>
+                <input
+                  id="src-title"
+                  value={sourceTitle}
+                  onChange={e => setSourceTitle(e.target.value)}
+                  className="life-input w-full px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="src-type" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                  来源类型
+                </label>
+                <select
+                  id="src-type"
+                  value={sourceType}
+                  onChange={e => setSourceType(e.target.value as ThoughtSourceType)}
+                  className="life-input w-full px-3 py-2 text-sm"
+                >
+                  <option value="book">书籍</option>
+                  <option value="article">文章</option>
+                  <option value="podcast">播客</option>
+                  <option value="video">视频</option>
+                  <option value="conversation">对话</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="src-locator" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                  位置
+                </label>
+                <input
+                  id="src-locator"
+                  value={sourceLocator}
+                  onChange={e => setSourceLocator(e.target.value)}
+                  placeholder="第 42 页 / 12:30"
+                  className="life-input w-full px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label htmlFor="src-url" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                  来源链接
+                </label>
+                <input
+                  id="src-url"
+                  value={sourceUrl}
+                  onChange={e => setSourceUrl(e.target.value)}
+                  placeholder="https://"
+                  className="life-input w-full px-3 py-2 text-sm"
+                />
+                <p className="mt-1 text-xs leading-6 text-[color:var(--muted-foreground)]">
+                  只支持 https:// 或 mailto:，其他协议不会被保存。
+                </p>
+              </div>
             </div>
           )}
 

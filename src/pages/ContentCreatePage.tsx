@@ -5,18 +5,17 @@ import MediaInsertMenu from '../components/MediaInsertMenu'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import { useCurrentUser } from '../auth'
 import {
-  addContentItem, addTrajectoryEntry, recordFootprintVisit, makeUniqueSlug,
-  folders as allFolders, series as allSeries, nextId } from '../mockData'
-import { slugify } from '../lib/slug'
+  addTrajectoryEntry, recordFootprintVisit,
+  nextId } from '../mockData'
 import { extractHashTags } from '../lib/library'
 import LibraryPicker from '../components/LibraryPicker'
-import { createPkm, createFolder, createSeriesEntry } from '../api/pkm'
+import { createPkm, createFolder, createSeriesEntry, listFolders, listSeries } from '../api/pkm'
 import AutosaveIndicator from '../components/AutosaveStatus'
 import DraftRestoredBanner from '../components/DraftRestoredBanner'
 import { useAutosave } from '../hooks/useAutosave'
 import { loadDraft, createKey, type Draft } from '../api/drafts'
 import { parseMarkdownFile, validateMarkdownFile } from '../lib/markdownImport'
-import type { ContentItem, ContentKind, ContentType, ThoughtType, ThoughtSourceType, Visibility } from '../types'
+import type { ContentKind, ContentType, Folder, Series, ThoughtSourceType, ThoughtType, Visibility } from '../types'
 
 type CreateType = 'thought' | 'diary' | 'note' | 'article' | 'trajectory'
 
@@ -91,9 +90,26 @@ export default function ContentCreatePage() {
   const [trajWriteToMap, setTrajWriteToMap] = useState(true)
 
   // Library placement (notes and articles only)
+  const [libraryTick, bumpLibrary] = useState(0)
   const [folderIds, setFolderIds] = useState<string[]>([])
+  // Same reason as the content itself: reading the store here would show the
+  // seed folders instead of the user's real ones once a backend is configured.
+  const [allFolders, setAllFolders] = useState<Folder[]>([])
+  const [allSeries, setAllSeries] = useState<Series[]>([])
+  useEffect(() => {
+    if (!currentUser) return
+    let cancelled = false
+    void Promise.all([
+      listFolders(currentUser, currentUser),
+      listSeries(currentUser, currentUser),
+    ]).then(([fs, ss]) => {
+      if (cancelled) return
+      setAllFolders(fs)
+      setAllSeries(ss)
+    })
+    return () => { cancelled = true }
+  }, [currentUser, libraryTick])
   const [seriesIds, setSeriesIds] = useState<string[]>([])
-  const [, bumpLibrary] = useState(0)
   const isDirty = Boolean(title || body || tagInput || trajCity || sourceTitle)
 
   const [restored, setRestored] = useState<Draft<CreateDraft> | null>(null)
@@ -248,7 +264,6 @@ export default function ContentCreatePage() {
     setSaving(true)
     await new Promise(r => setTimeout(r, 600))
 
-    const now = new Date().toISOString()
     const tagNames = Array.from(
       new Set([
         ...tagInput.split(/[,，]/).map(t => t.trim()).filter(Boolean),
@@ -288,64 +303,42 @@ export default function ContentCreatePage() {
 
     const type: ContentType = createType === 'thought' ? 'thought' : createType === 'diary' ? 'diary' : 'pkm'
 
-    // PKM goes through the data layer, which owns slug allocation, membership
-    // normalisation and the ownership rule. Other types still write directly
-    // and will migrate the same way.
-    if (type === 'pkm') {
-      try {
-        const created = await createPkm(currentUser!, {
-          title: title.trim() || body.trim().slice(0, 30),
-          body: body.trim(),
-          contentKind,
-          visibility,
-          tagNames: tags.map(t => t.name),
-          folderIds,
-          seriesIds,
-        })
-        autosave.discard()
-        setSaving(false)
-        navigate(`/${currentUser}/${config.section}/${created.slug}`)
-      } catch (err) {
-        setSaving(false)
-        alert(err instanceof Error ? err.message : '保存失败，请重试。')
-      }
-      return
+    // Every type goes through the data layer. Thoughts and diary entries used
+    // to write to the store directly, which meant that with a backend
+    // configured they were not saved at all — and that the ownership rule the
+    // data layer enforces did not apply to them.
+    try {
+      const created = await createPkm(currentUser!, {
+        type,
+        title: title.trim() || body.trim().slice(0, 30),
+        body: body.trim(),
+        visibility,
+        tagNames: tags.map(t => t.name),
+        folderIds,
+        seriesIds,
+        ...(type === 'pkm' ? { contentKind } : {}),
+        ...(type === 'thought'
+          ? {
+              thoughtType,
+              ...(thoughtType === 'excerpt'
+                ? {
+                    sourceAuthor: sourceAuthor.trim() || undefined,
+                    sourceTitle: sourceTitle.trim() || undefined,
+                    sourceType,
+                    sourceUrl: sourceUrl.trim() || undefined,
+                    sourceLocator: sourceLocator.trim() || undefined,
+                  }
+                : {}),
+            }
+          : {}),
+      })
+      autosave.discard()
+      setSaving(false)
+      navigate(`/${currentUser}/${config.section}/${created.slug}`)
+    } catch (err) {
+      setSaving(false)
+      alert(err instanceof Error ? err.message : '保存失败，请重试。')
     }
-
-    const slug = makeUniqueSlug(slugify(title || body.slice(0, 30), `entry-${Date.now()}`))
-    const item: ContentItem = {
-      id: nextId('c'),
-      slug,
-      type,
-      title: title.trim() || body.trim().slice(0, 30),
-      body: body.trim(),
-      summary: body.trim().slice(0, 60),
-      visibility,
-      tags,
-      createdAt: now,
-      updatedAt: now,
-      publishedAt: visibility === 'draft' ? '' : now,
-      author: currentUser!,
-      ...(type === 'thought'
-        ? {
-            thoughtType,
-            ...(thoughtType === 'excerpt'
-              ? {
-                  sourceAuthor: sourceAuthor.trim() || undefined,
-                  sourceTitle: sourceTitle.trim() || undefined,
-                  sourceType,
-                  sourceUrl: sourceUrl.trim() || undefined,
-                  sourceLocator: sourceLocator.trim() || undefined,
-                }
-              : {}),
-          }
-        : {}),
-    }
-
-    addContentItem(item)
-    autosave.discard()
-    setSaving(false)
-    navigate(`/${currentUser}/${config.section}/${slug}`)
   }
 
   return (
@@ -560,8 +553,8 @@ export default function ContentCreatePage() {
           {(createType === 'note' || createType === 'article') && (
             <div className="border-b border-[color:var(--border)] pb-4">
               <LibraryPicker
-                folders={allFolders.filter(f => f.owner === currentUser)}
-                series={allSeries.filter(s => s.owner === currentUser)}
+                folders={allFolders}
+                series={allSeries}
                 folderIds={folderIds}
                 seriesIds={seriesIds}
                 onChange={next => { setFolderIds(next.folderIds); setSeriesIds(next.seriesIds) }}

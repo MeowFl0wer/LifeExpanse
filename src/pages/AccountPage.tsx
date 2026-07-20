@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import SecuritySettings from '../components/SecuritySettings'
+import { updateProfile } from '../api/account'
 import { euanProfile, deviceSessions, adminAccessRecords, storageStats } from '../mockData'
 import { useCurrentUser, clearCurrentUser } from '../auth'
 
@@ -36,7 +37,26 @@ export default function AccountPage() {
   const [showUv, setShowUv] = useState(true)
 
   const [sessions, setSessions] = useState(deviceSessions)
-  const [importMode] = useState<'merge'>('merge')
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [profileError, setProfileError] = useState('')
+  const [profileOk, setProfileOk] = useState('')
+
+  async function handleSaveProfile() {
+    const name = displayName.trim()
+    if (!name) { setProfileError('昵称不能为空'); return }
+
+    setSavingProfile(true)
+    setProfileError('')
+    setProfileOk('')
+    try {
+      await updateProfile(name, bio)
+      setProfileOk('资料已保存')
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : '保存失败，请稍后重试')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
 
   const storagePct = Math.round((storageStats.usedMb / storageStats.limitMb) * 100)
 
@@ -92,15 +112,32 @@ export default function AccountPage() {
               <SectionTitle title="基本资料" />
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">用户名</label>
-                  <input value={currentUser ?? ''} disabled className="life-input w-full px-3 py-2 text-sm opacity-60" />
-                  <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">
-                    用户名是你的主页地址，修改后旧地址会保留一段时间并重定向。
+                  <label htmlFor="profile-username" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                    用户名
+                  </label>
+                  <input
+                    id="profile-username"
+                    value={`@${currentUser ?? ''}`}
+                    disabled
+                    className="life-input w-full px-3 py-2 text-sm opacity-60"
+                  />
+                  <p className="mt-1 text-xs leading-6 text-[color:var(--muted-foreground)]">
+                    用户名是你主页的地址，创建后不可更改，且全站唯一。
                   </p>
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">显示名称</label>
-                  <input value={displayName} onChange={e => setDisplayName(e.target.value)} className="life-input w-full px-3 py-2 text-sm" />
+                  <label htmlFor="profile-display" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                    昵称
+                  </label>
+                  <input
+                    id="profile-display"
+                    value={displayName}
+                    onChange={e => { setDisplayName(e.target.value); setProfileError(''); setProfileOk('') }}
+                    className="life-input w-full px-3 py-2 text-sm"
+                  />
+                  <p className="mt-1 text-xs leading-6 text-[color:var(--muted-foreground)]">
+                    昵称可以随时更改，同样全站唯一。
+                  </p>
                 </div>
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">时区</label>
@@ -123,8 +160,16 @@ export default function AccountPage() {
                   <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} placeholder="一句话介绍自己" className="life-input w-full px-3 py-2 text-sm leading-7" />
                 </div>
               </div>
-              <button type="button" onClick={() => alert('前端原型：资料保存需要真实后端支持。')} className="life-button life-button-primary mt-4 text-sm">
-                保存资料
+              {profileError && <p className="mt-3 text-xs text-[#B23B3B]">{profileError}</p>}
+              {profileOk && <p className="mt-3 text-xs text-[color:var(--primary)]">{profileOk}</p>}
+
+              <button
+                type="button"
+                onClick={() => void handleSaveProfile()}
+                disabled={savingProfile}
+                className="life-button life-button-primary mt-4 text-sm disabled:opacity-60"
+              >
+                {savingProfile ? '保存中…' : '保存资料'}
               </button>
             </section>
 
@@ -241,20 +286,19 @@ export default function AccountPage() {
             <section className="border-t border-[color:var(--border)] pt-8">
               <SectionTitle
                 title="导入数据"
-                desc="导入只会合并，不会覆盖或清空现有内容。重复数据跳过，冲突数据生成副本。"
+                desc="从导出的数据包恢复内容。导入只会合并，不会覆盖或清空现有内容。"
               />
               <div className="life-surface p-5">
-                <div className="mb-4 flex items-center gap-2 text-xs text-[color:var(--muted-foreground)]">
-                  <span className="rounded-full bg-[#EEF8F0] px-2 py-0.5 text-[#3F744D]">合并模式</span>
-                  <span>当前版本不提供覆盖导入。</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => alert(`前端原型（${importMode} 模式）：\n\n导入前会展示新增、重复、冲突和错误数量；\n相同 UUID 且内容一致的数据直接跳过；\nUUID 相同但内容不同的会创建冲突副本；\n导入失败会整体回滚，不影响现有数据。`)}
-                  className="life-button w-full border-2 border-dashed py-6 text-xs"
-                >
-                  选择数据包文件（.zip）
-                </button>
+                <p className="text-sm text-[color:var(--foreground)]">尚未开放</p>
+                <p className="mt-2 text-xs leading-6 text-[color:var(--muted-foreground)]">
+                  解压外部压缩包是本站攻击面最大的一处输入，需要先完成
+                  路径穿越、解压炸弹、符号链接和资源上限的防护，才会开放。
+                  在此之前这里不提供文件选择——一个看起来能用的入口，
+                  会让人以为它已经安全了。
+                </p>
+                <p className="mt-2 text-xs leading-6 text-[color:var(--muted-foreground)]">
+                  需要迁移单篇内容时，可以用笔记与文章页面的「导入 Markdown」。
+                </p>
               </div>
             </section>
 
