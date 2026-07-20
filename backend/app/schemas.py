@@ -269,3 +269,22 @@ class RecoveryCodesOut(BaseModel):
 class TotpStatusOut(BaseModel):
     enabled: bool
     recovery_codes_left: int
+
+
+class SetBackupEmailIn(BaseModel):
+    """Binding a second address is a sensitive change: it becomes another way
+    into the account, so it needs the same proof as changing the primary."""
+
+    current_password: str
+    backup_email: EmailStr
+    # Proves the new address is reachable.
+    backup_email_code: str
+    # Proves it is really the account holder asking.
+    email_code: str | None = None
+    totp_code: str | None = None
+
+
+class RemoveBackupEmailIn(BaseModel):
+    current_password: str
+    email_code: str | None = None
+    totp_code: str | None = None

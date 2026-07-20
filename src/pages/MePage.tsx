@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import { maskEmail } from '../lib/mask'
+import { currentBackupEmail } from '../api/account'
 import { useCurrentUser } from '../auth'
 import {
   euanProfile, allContent, trajectoryEntries,
@@ -39,6 +41,17 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 export default function MePage() {
   const currentUser = useCurrentUser()
   const profile = euanProfile
+  // The bound address comes from the server, not the seed profile, so this
+  // reflects what recovery would actually accept.
+  const [backupEmail, setBackupEmail] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    currentBackupEmail()
+      .then(v => { if (!cancelled) setBackupEmail(v) })
+      .catch(() => { if (!cancelled) setBackupEmail('') })
+    return () => { cancelled = true }
+  }, [])
 
   const publicCount = allContent.filter(c => c.visibility === 'public').length
   const totalDistance = flightRecords.reduce((s, f) => s + f.distance, 0)
@@ -87,8 +100,8 @@ export default function MePage() {
               <Row
                 label="备用邮箱"
                 value={
-                  profile.backupEmail
-                    ? maskEmail(profile.backupEmail)
+                  backupEmail
+                    ? maskEmail(backupEmail)
                     : <span className="text-[color:var(--muted-foreground)]">未设置</span>
                 }
               />

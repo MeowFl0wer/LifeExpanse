@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import {
-  changeEmail, changePassword, requestNewEmailCode, requestStepUpCode,
+  changeEmail, changePassword, currentBackupEmail, removeBackupEmail,
+  requestBackupEmailCode, requestNewEmailCode, requestStepUpCode, setBackupEmail,
   totpDisable, totpEnable, totpSetup, totpStatus,
   type TotpSetup, type TotpStatus,
 } from '../api/account'
+import { maskEmail } from '../lib/mask'
 
 /**
  * The security half of the settings page.
@@ -123,6 +125,7 @@ export default function SecuritySettings() {
     <div className="space-y-10">
       <PasswordSection totpEnabled={totpEnabled} />
       <EmailSection totpEnabled={totpEnabled} />
+      <BackupEmailSection totpEnabled={totpEnabled} />
       <TwoFactorSection status={status} onChange={setStatus} />
     </div>
   )
@@ -355,6 +358,220 @@ function EmailSection({ totpEnabled }: { totpEnabled: boolean }) {
           {busy ? '更换中…' : '更换邮箱'}
         </button>
       </form>
+    </section>
+  )
+}
+
+/* ---------------- backup email ---------------- */
+
+function BackupEmailSection({ totpEnabled }: { totpEnabled: boolean }) {
+  const [bound, setBound] = useState<string | null>(null)
+  const [current, setCurrent] = useState('')
+  const [address, setAddress] = useState('')
+  const [addressCode, setAddressCode] = useState('')
+  const [emailCode, setEmailCode] = useState('')
+  const [totpCode, setTotpCode] = useState('')
+  const [sendingOwner, setSendingOwner] = useState(false)
+  const [sentOwner, setSentOwner] = useState(false)
+  const [sendingNew, setSendingNew] = useState(false)
+  const [newNotice, setNewNotice] = useState('')
+  const [removing, setRemoving] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [ok, setOk] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    currentBackupEmail()
+      .then(v => { if (!cancelled) setBound(v) })
+      .catch(() => { if (!cancelled) setBound('') })
+    return () => { cancelled = true }
+  }, [])
+
+  function reset() {
+    setCurrent(''); setAddress(''); setAddressCode('')
+    setEmailCode(''); setTotpCode(''); setSentOwner(false); setNewNotice('')
+  }
+
+  async function sendOwnerCode() {
+    setSendingOwner(true)
+    setError('')
+    try {
+      await requestStepUpCode('change_email')
+      setSentOwner(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '发送失败')
+    } finally {
+      setSendingOwner(false)
+    }
+  }
+
+  async function sendAddressCode() {
+    if (!address.includes('@')) { setError('请输入有效的备用邮箱'); return }
+    setSendingNew(true)
+    setError('')
+    try {
+      setNewNotice(await requestBackupEmailCode(address))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '发送失败')
+    } finally {
+      setSendingNew(false)
+    }
+  }
+
+  async function submitBind(e: React.FormEvent) {
+    e.preventDefault()
+    if (!addressCode) { setError('请输入备用邮箱收到的验证码'); return }
+    if (!emailCode && !totpCode) { setError('需要邮箱验证码或两步验证码'); return }
+
+    setBusy(true)
+    setError('')
+    setOk('')
+    try {
+      const detail = await setBackupEmail({
+        currentPassword: current,
+        backupEmail: address,
+        backupEmailCode: addressCode,
+        emailCode: emailCode || undefined,
+        totpCode: totpCode || undefined,
+      })
+      setOk(detail)
+      setBound(address.trim().toLowerCase())
+      reset()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '绑定失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function submitRemove(e: React.FormEvent) {
+    e.preventDefault()
+    if (!emailCode && !totpCode) { setError('需要邮箱验证码或两步验证码'); return }
+
+    setBusy(true)
+    setError('')
+    setOk('')
+    try {
+      const detail = await removeBackupEmail(current, emailCode || undefined, totpCode || undefined)
+      setOk(detail)
+      setBound('')
+      setRemoving(false)
+      reset()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '解绑失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="border-t border-[color:var(--border)] pt-8">
+      <h2 className="text-base font-medium text-[color:var(--foreground)]">备用邮箱</h2>
+      <p className="mt-1 text-sm leading-6 text-[color:var(--muted-foreground)]">
+        备用邮箱可以用来登录和找回密码。它是进入账号的第二道门，
+        所以绑定和解绑都需要当前密码加一次验证。
+      </p>
+
+      {bound === null ? (
+        <p className="mt-4 text-sm text-[color:var(--muted-foreground)]">加载中…</p>
+      ) : bound ? (
+        <div className="mt-4">
+          <p className="text-sm text-[color:var(--foreground)]">
+            已绑定
+            <span className="ml-2 text-[color:var(--muted-foreground)]">{maskEmail(bound)}</span>
+          </p>
+
+          {removing ? (
+            <form onSubmit={e => void submitRemove(e)} className="mt-4 space-y-4 sm:max-w-md">
+              <Field
+                id="bk-remove-pass" label="当前密码" type="password" autoComplete="current-password"
+                value={current} onChange={e => { setCurrent(e.target.value); setError('') }}
+              />
+              <SecondProof
+                idPrefix="bk-remove"
+                emailCode={emailCode} totpCode={totpCode}
+                onEmailCode={v => { setEmailCode(v); setError('') }}
+                onTotpCode={v => { setTotpCode(v); setError('') }}
+                onSendCode={() => void sendOwnerCode()}
+                sending={sendingOwner} sent={sentOwner} totpEnabled={totpEnabled}
+              />
+              <Feedback error={error} />
+              <div className="flex gap-2">
+                <button type="submit" disabled={busy} className="life-button text-sm text-[#B23B3B] disabled:opacity-60">
+                  {busy ? '解绑中…' : '确认解绑'}
+                </button>
+                <button type="button" onClick={() => { setRemoving(false); reset(); setError('') }} className="life-button text-sm">
+                  取消
+                </button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <Feedback ok={ok} />
+              <button type="button" onClick={() => setRemoving(true)} className="life-button mt-3 text-sm">
+                解绑备用邮箱
+              </button>
+            </>
+          )}
+        </div>
+      ) : (
+        <form onSubmit={e => void submitBind(e)} className="mt-4 space-y-4 sm:max-w-md">
+          <Field
+            id="bk-pass" label="当前密码" type="password" autoComplete="current-password"
+            value={current} onChange={e => { setCurrent(e.target.value); setError('') }}
+          />
+
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-40 flex-1">
+              <label htmlFor="bk-address" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                备用邮箱
+              </label>
+              <input
+                id="bk-address" type="email" autoComplete="email"
+                value={address}
+                onChange={e => { setAddress(e.target.value); setError('') }}
+                className="life-input w-full px-3 py-2 text-sm"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => void sendAddressCode()}
+              disabled={sendingNew}
+              className="life-button shrink-0 px-3 py-2 text-xs disabled:opacity-60"
+            >
+              {sendingNew ? '发送中…' : '发送验证码'}
+            </button>
+          </div>
+          {newNotice && (
+            <p className="text-xs leading-6 text-[color:var(--muted-foreground)]">{newNotice}</p>
+          )}
+
+          <Field
+            id="bk-address-code" label="备用邮箱验证码" placeholder="6 位数字" inputMode="numeric"
+            value={addressCode} onChange={e => { setAddressCode(e.target.value); setError('') }}
+          />
+
+          <SecondProof
+            idPrefix="bk"
+            emailCode={emailCode} totpCode={totpCode}
+            onEmailCode={v => { setEmailCode(v); setError('') }}
+            onTotpCode={v => { setTotpCode(v); setError('') }}
+            onSendCode={() => void sendOwnerCode()}
+            sending={sendingOwner} sent={sentOwner} totpEnabled={totpEnabled}
+          />
+
+          <Feedback error={error} ok={ok} />
+
+          <button
+            type="submit"
+            disabled={busy}
+            className="life-button life-button-primary text-sm disabled:opacity-60"
+          >
+            {busy ? '绑定中…' : '绑定备用邮箱'}
+          </button>
+        </form>
+      )}
     </section>
   )
 }

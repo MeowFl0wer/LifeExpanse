@@ -284,4 +284,85 @@ export function __resetAccountMock(): void {
   mockCodes.clear()
   mockTotpEnabled = false
   mockRecoveryLeft = 0
+  mockBackup = ''
+}
+
+/* ---------------- backup email ---------------- */
+
+let mockBackup = ''
+
+export async function requestBackupEmailCode(email: string): Promise<string> {
+  if (usingBackend()) {
+    const res = await request<{ detail: string }>('/auth/email/backup/code', {
+      method: 'POST',
+      body: { email },
+    })
+    return res.detail
+  }
+  if (!mockTaken.has(email.trim().toLowerCase())) {
+    mockCodes.set(`backup:${email.trim().toLowerCase()}`, MOCK_CODE)
+  }
+  return NEUTRAL_REGISTER
+}
+
+export interface SetBackupEmailInput {
+  currentPassword: string
+  backupEmail: string
+  backupEmailCode: string
+  emailCode?: string
+  totpCode?: string
+}
+
+export async function setBackupEmail(input: SetBackupEmailInput): Promise<string> {
+  if (usingBackend()) {
+    const res = await request<{ detail: string }>('/auth/email/backup', {
+      method: 'POST',
+      body: {
+        current_password: input.currentPassword,
+        backup_email: input.backupEmail,
+        backup_email_code: input.backupEmailCode,
+        email_code: input.emailCode ?? null,
+        totp_code: input.totpCode ?? null,
+      },
+    })
+    return res.detail
+  }
+  if (!input.emailCode && !input.totpCode) {
+    throw new ApiError('需要邮箱验证码或两步验证码', 400)
+  }
+  const key = `backup:${input.backupEmail.trim().toLowerCase()}`
+  if (mockCodes.get(key) !== input.backupEmailCode) {
+    throw new ApiError('备用邮箱验证码不正确或已过期', 400)
+  }
+  mockCodes.delete(key)
+  mockBackup = input.backupEmail.trim().toLowerCase()
+  return '备用邮箱已绑定'
+}
+
+export async function removeBackupEmail(
+  currentPassword: string, emailCode?: string, totpCode?: string
+): Promise<string> {
+  if (usingBackend()) {
+    const res = await request<{ detail: string }>('/auth/email/backup', {
+      method: 'DELETE',
+      body: {
+        current_password: currentPassword,
+        email_code: emailCode ?? null,
+        totp_code: totpCode ?? null,
+      },
+    })
+    return res.detail
+  }
+  if (!emailCode && !totpCode) throw new ApiError('需要邮箱验证码或两步验证码', 400)
+  mockBackup = ''
+  return '备用邮箱已解绑'
+}
+
+/** The address currently bound, or '' — read by the settings panel. */
+export async function currentBackupEmail(): Promise<string> {
+  if (usingBackend()) {
+    const me = await request<{ backup_email: string | null }>('/auth/me')
+    return me.backup_email ?? ''
+  }
+  return mockBackup
 }

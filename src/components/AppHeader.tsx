@@ -43,7 +43,11 @@ export default function AppHeader() {
     >
       <div className="life-shell">
         <div className="flex items-center justify-between h-16 gap-4">
-          <Link to="/app" className="flex items-center text-[color:var(--foreground)] no-underline shrink-0">
+          <Link
+            to="/"
+            aria-label="返回主页"
+            className="flex shrink-0 items-center text-[color:var(--foreground)] no-underline"
+          >
             <Logo size="sm" />
           </Link>
 

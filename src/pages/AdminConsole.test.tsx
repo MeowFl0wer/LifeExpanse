@@ -138,3 +138,13 @@ describe('admin console', () => {
     expect(screen.getByRole('heading', { name: '系统恢复' })).toBeTruthy()
   })
 })
+
+describe('header mark', () => {
+  // The mark is the way home from anywhere. It used to point at /app, which
+  // made it a no-op on the dashboard itself.
+  it('links to the homepage from the app header', async () => {
+    renderAdmin()
+    await waitFor(() => expect(screen.getByText('在线用户')).toBeTruthy())
+    expect(screen.getByRole('link', { name: '返回主页' }).getAttribute('href')).toBe('/')
+  })
+})
