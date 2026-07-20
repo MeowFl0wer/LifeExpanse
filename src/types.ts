@@ -142,6 +142,10 @@ export interface UserProfile {
   bio: string
   avatar: string
   publicSince: string
+  /** Primary address: used for sign-in, recovery and notifications. */
+  email: string
+  /** Optional second address, used only for recovery. */
+  backupEmail: string
 }
 
 export interface SiteStats {

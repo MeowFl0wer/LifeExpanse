@@ -2,10 +2,7 @@ import { Link } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import RunningClock from '../components/RunningClock'
-import {
-  siteStats, euanProfile, allContent, trajectoryEntries,
-  footprintCities, flightRecords, encryptedSpaces,
-} from '../mockData'
+import { siteStats, allContent } from '../mockData'
 
 const APP_VERSION = 'v0.1.0'
 
@@ -49,8 +46,6 @@ const modules = [
 
 export default function AboutPage() {
   const publicCount = allContent.filter(c => c.visibility === 'public').length
-  const totalDistance = flightRecords.reduce((s, f) => s + f.distance, 0)
-  const countryCount = new Set(footprintCities.map(c => c.country)).size
 
   return (
     <div className="life-page flex min-h-screen flex-col">
@@ -117,17 +112,6 @@ export default function AboutPage() {
                   <p className="mt-1 text-sm leading-6 text-[color:var(--muted-foreground)]">{m.desc}</p>
                 </Link>
               ))}
-            </div>
-          </Section>
-
-          <Section title="记录概况" desc="站点主人目前累计的记录量。">
-            <div>
-              <Row label="公开内容" value={`${publicCount} 条`} />
-              <Row label="人生轨迹" value={`${trajectoryEntries.length} 天`} />
-              <Row label="去过的城市" value={`${footprintCities.length} 座 · ${countryCount} 个国家或地区`} />
-              <Row label="飞行记录" value={`${flightRecords.length} 段 · ${totalDistance.toLocaleString()} km`} />
-              <Row label="独立空间" value={`${encryptedSpaces.length} 个`} />
-              <Row label="公开主页开放于" value={euanProfile.publicSince} />
             </div>
           </Section>
 

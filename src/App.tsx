@@ -16,6 +16,7 @@ import SpacePostPage from './pages/SpacePostPage'
 import ContentCreatePage from './pages/ContentCreatePage'
 import SearchPage from './pages/SearchPage'
 import AccountPage from './pages/AccountPage'
+import MePage from './pages/MePage'
 import AdminPage from './pages/AdminPage'
 import AboutPage from './pages/AboutPage'
 import TrashPage from './pages/TrashPage'
@@ -63,6 +64,7 @@ export default function App() {
         {/* Search, about, account, admin */}
         <Route path="/search" element={<SearchPage />} />
         <Route path="/about" element={<AboutPage />} />
+        <Route path="/me" element={<RequireAuth><MePage /></RequireAuth>} />
         <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
         <Route path="/trash" element={<RequireAuth><TrashPage /></RequireAuth>} />
         <Route path="/admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
