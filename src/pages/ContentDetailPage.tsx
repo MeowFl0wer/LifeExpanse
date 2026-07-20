@@ -7,8 +7,8 @@ import VisibilityBadge from '../components/VisibilityBadge'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import CommentSection from '../components/CommentSection'
 import ArticleToc from '../components/ArticleToc'
-import { publishAsArticle, revertToNote, getLinkGraph, getPkmBySlug, type LinkGraph } from '../api/pkm'
-import { getContentBySlug, deleteContentItem, folders as allFolders, series as allSeries } from '../mockData'
+import { publishAsArticle, revertToNote, getLinkGraph, getPkmBySlug, deletePkm, type LinkGraph } from '../api/pkm'
+import { getContentBySlug, folders as allFolders, series as allSeries } from '../mockData'
 import type { ContentItem } from '../types'
 import { locationTrail } from '../lib/library'
 import { useCurrentUser } from '../auth'
@@ -166,8 +166,9 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
       setConfirmingDelete(false)
       return
     }
-    deleteContentItem(item!.id)
-    navigate(`/${username}/${section}`, { replace: true })
+    void deletePkm(item!.id, currentUser!)
+      .then(() => navigate(`/${username}/${section}`, { replace: true }))
+      .catch(() => alert('删除失败，请重试。'))
   }
 
   return (

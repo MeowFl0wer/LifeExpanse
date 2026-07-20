@@ -120,6 +120,22 @@ def apply_membership(
     item.series = series
 
 
+def comments_allowed_for(item: Content) -> bool:
+    """需求 10.1: only the article form may carry comments.
+
+    A note that was published as an article and later reverted keeps its stored
+    flag, so the effective answer is always derived from the current form.
+    """
+    return item.type == "pkm" and item.content_kind == "article" and item.allow_comments
+
+
+def normalise_comment_flag(item: Content, requested: bool | None) -> bool:
+    """A note can never end up with comments switched on."""
+    if item.type != "pkm" or item.content_kind != "article":
+        return False
+    return bool(requested)
+
+
 def to_out(item: Content) -> ContentOut:
     return ContentOut(
         id=item.id,

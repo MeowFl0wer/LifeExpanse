@@ -8,8 +8,9 @@ interface LibraryPickerProps {
   folderIds: string[]
   seriesIds: string[]
   onChange: (next: { folderIds: string[]; seriesIds: string[] }) => void
-  onCreateFolder: (name: string) => string
-  onCreateSeries: (name: string) => string
+  /** Creating goes through the data layer, so these are async. */
+  onCreateFolder: (name: string) => Promise<string>
+  onCreateSeries: (name: string) => Promise<string>
 }
 
 /**
@@ -44,18 +45,27 @@ export default function LibraryPicker({
     apply({ folderIds, seriesIds: next })
   }
 
-  function confirmCreate() {
+  const [creatingBusy, setCreatingBusy] = useState(false)
+
+  async function confirmCreate() {
     const name = draftName.trim()
-    if (!name) return
-    if (creating === 'folder') {
-      const id = onCreateFolder(name)
-      apply({ folderIds: [...folderIds, id], seriesIds })
-    } else {
-      const id = onCreateSeries(name)
-      apply({ folderIds, seriesIds: [...seriesIds, id] })
+    if (!name || creatingBusy) return
+    setCreatingBusy(true)
+    try {
+      if (creating === 'folder') {
+        const id = await onCreateFolder(name)
+        apply({ folderIds: [...folderIds, id], seriesIds })
+      } else {
+        const id = await onCreateSeries(name)
+        apply({ folderIds, seriesIds: [...seriesIds, id] })
+      }
+      setCreating(null)
+      setDraftName('')
+    } catch {
+      // Leave the box open with the name intact so the attempt is not lost.
+    } finally {
+      setCreatingBusy(false)
     }
-    setCreating(null)
-    setDraftName('')
   }
 
   return (
@@ -158,14 +168,19 @@ export default function LibraryPicker({
             value={draftName}
             onChange={e => setDraftName(e.target.value)}
             onKeyDown={e => {
-              if (e.key === 'Enter') { e.preventDefault(); confirmCreate() }
+              if (e.key === 'Enter') { e.preventDefault(); void confirmCreate() }
               if (e.key === 'Escape') setCreating(null)
             }}
             placeholder="名称"
             className="life-input min-w-40 flex-1 px-2.5 py-1.5 text-xs"
           />
-          <button type="button" onClick={confirmCreate} className="life-button life-button-primary px-3 py-1 text-xs">
-            创建
+          <button
+            type="button"
+            onClick={() => void confirmCreate()}
+            disabled={creatingBusy}
+            className="life-button life-button-primary px-3 py-1 text-xs disabled:opacity-60"
+          >
+            {creatingBusy ? '创建中…' : '创建'}
           </button>
           <button type="button" onClick={() => setCreating(null)} className="life-button px-3 py-1 text-xs">
             取消

@@ -47,8 +47,9 @@ describe('login redirect timer', () => {
     render(<MemoryRouter initialEntries={['/login']}><LoginPage /></MemoryRouter>)
     submitValidCredentials()
 
-    // Simulated request, then the success pause.
-    await act(async () => { await vi.advanceTimersByTimeAsync(1200) })
+    // The credential check resolves first; the 600ms pause is what delays the
+    // redirect so the success state is visible.
+    await act(async () => { await vi.advanceTimersByTimeAsync(100) })
     expect(navigateSpy).not.toHaveBeenCalled()
 
     await act(async () => { await vi.advanceTimersByTimeAsync(600) })
@@ -60,7 +61,7 @@ describe('login redirect timer', () => {
     const view = render(<MemoryRouter initialEntries={['/login']}><LoginPage /></MemoryRouter>)
     submitValidCredentials()
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(1200) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(100) })
     view.unmount()
 
     await act(async () => { await vi.advanceTimersByTimeAsync(2000) })

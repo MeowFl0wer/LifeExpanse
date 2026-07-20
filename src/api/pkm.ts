@@ -1,4 +1,6 @@
 import { ok, fail } from './client'
+import { usingBackend } from './http'
+import * as remote from './pkmHttp'
 import {
   allContent, folders as folderStore, series as seriesStore,
   addContentItem, updateContentItem, deleteContentItem, makeUniqueSlug, nextId,
@@ -12,6 +14,10 @@ import type { ContentItem, ContentKind, Folder, Series, Visibility } from '../ty
 
 /**
  * Notes & articles data access.
+ *
+ * Each function checks `usingBackend()` first: with `VITE_API_BASE` set the
+ * call goes to the server, otherwise it runs against the in-memory store.
+ * Pages call the same names either way, so switching does not touch them.
  *
  * Permission filtering happens here rather than in components so a page cannot
  * forget it. When this moves behind a real API the same rules must also be
@@ -38,6 +44,8 @@ function visibleTo(item: ContentItem, viewer: string | null): boolean {
 }
 
 export async function listPkm(params: ListParams): Promise<ContentItem[]> {
+  if (usingBackend()) return remote.listPkm(params)
+
   const { author, viewer } = params
   let items = allContent.filter(c => c.type === 'pkm' && c.author === author && visibleTo(c, viewer))
 
@@ -73,6 +81,7 @@ export async function getPkmBySlug(params: {
   slug: string
   viewer: string | null
 }): Promise<ContentItem> {
+  if (usingBackend()) return remote.getPkmBySlug(params)
   const item = allContent.find(
     c => c.slug === params.slug && c.type === 'pkm' && c.author === params.author
   )
@@ -101,6 +110,8 @@ export interface PkmDraft {
 }
 
 export async function createPkm(author: string, draft: PkmDraft): Promise<ContentItem> {
+  if (usingBackend()) return remote.createPkm(draft)
+
   if (!draft.title.trim()) return fail('标题不能为空')
   if (!draft.body.trim()) return fail('正文不能为空')
 
@@ -152,6 +163,7 @@ export async function updatePkm(
   actor: string,
   patch: Partial<PkmDraft>
 ): Promise<ContentItem> {
+  if (usingBackend()) return remote.updatePkm(id, patch)
   const existing = ownedByActor(id, actor)
   if (!existing) return fail('内容不存在', 404)
   if (patch.title !== undefined && !patch.title.trim()) return fail('标题不能为空')
@@ -199,6 +211,7 @@ export async function publishAsArticle(
   actor: string,
   extra: { summary?: string; category?: string; allowComments?: boolean } = {}
 ): Promise<ContentItem> {
+  if (usingBackend()) return remote.publishAsArticle(id)
   const item = ownedByActor(id, actor)
   if (!item) return fail('内容不存在', 404)
   return updatePkm(id, actor, {
@@ -211,10 +224,12 @@ export async function publishAsArticle(
 
 /** Returns an article to note form. Comments are switched off on the way back. */
 export async function revertToNote(id: string, actor: string): Promise<ContentItem> {
+  if (usingBackend()) return remote.revertToNote(id)
   return updatePkm(id, actor, { contentKind: 'note', allowComments: false })
 }
 
 export async function deletePkm(id: string, actor: string): Promise<void> {
+  if (usingBackend()) return remote.deletePkm(id)
   if (!ownedByActor(id, actor)) return fail('内容不存在', 404)
   deleteContentItem(id)
   return ok(undefined)
@@ -248,6 +263,7 @@ export async function getLinkGraph(item: ContentItem, viewer: string | null): Pr
 /* ---- Library ---- */
 
 export async function listFolders(author: string, viewer: string | null): Promise<Folder[]> {
+  if (usingBackend()) return remote.listFolders(author)
   const owned = folderStore.filter(f => f.owner === author)
   if (viewer === author) return ok(owned)
   // A folder holding nothing public would leak its name and description.
@@ -256,6 +272,7 @@ export async function listFolders(author: string, viewer: string | null): Promis
 }
 
 export async function listSeries(author: string, viewer: string | null): Promise<Series[]> {
+  if (usingBackend()) return remote.listSeries(author)
   const owned = seriesStore.filter(s => s.owner === author)
   if (viewer === author) return ok(owned)
   const visible = allContent.filter(c => c.author === author && c.visibility === 'public')
@@ -280,6 +297,7 @@ export interface LibraryDraft {
 }
 
 export async function createFolder(owner: string, draft: LibraryDraft): Promise<Folder> {
+  if (usingBackend()) return remote.createFolder(draft)
   if (!draft.name.trim()) return fail('文件夹名称不能为空')
   const folder: Folder = {
     id: nextId('fd'),
@@ -295,6 +313,7 @@ export async function createFolder(owner: string, draft: LibraryDraft): Promise<
 }
 
 export async function saveFolder(id: string, actor: string, draft: LibraryDraft): Promise<Folder> {
+  if (usingBackend()) return remote.saveFolder(id, draft)
   const owned = folderStore.find(f => f.id === id && f.owner === actor)
   if (!owned) return fail('文件夹不存在', 404)
   if (!draft.name.trim()) return fail('文件夹名称不能为空')
@@ -314,6 +333,7 @@ export async function saveFolder(id: string, actor: string, draft: LibraryDraft)
  * become unfiled, so deleting a container can never destroy what it held.
  */
 export async function removeFolder(id: string, actor: string): Promise<{ detached: number }> {
+  if (usingBackend()) return remote.removeFolder(id)
   if (!folderStore.some(f => f.id === id && f.owner === actor)) return fail('文件夹不存在', 404)
   const affected = allContent.filter(c => (c.folderIds ?? []).includes(id))
   for (const item of affected) {
@@ -324,6 +344,7 @@ export async function removeFolder(id: string, actor: string): Promise<{ detache
 }
 
 export async function createSeriesEntry(owner: string, draft: LibraryDraft): Promise<Series> {
+  if (usingBackend()) return remote.createSeriesEntry(draft)
   if (!draft.name.trim()) return fail('系列名称不能为空')
   const entry: Series = {
     id: nextId('sr'),
@@ -338,6 +359,7 @@ export async function createSeriesEntry(owner: string, draft: LibraryDraft): Pro
 }
 
 export async function saveSeries(id: string, actor: string, draft: LibraryDraft): Promise<Series> {
+  if (usingBackend()) return remote.saveSeries(id, draft)
   const owned = seriesStore.find(s => s.id === id && s.owner === actor)
   if (!owned) return fail('系列不存在', 404)
   if (!draft.name.trim()) return fail('系列名称不能为空')
@@ -353,6 +375,7 @@ export async function saveSeries(id: string, actor: string, draft: LibraryDraft)
 
 /** Removes a series, detaching its folders and any directly filed content. */
 export async function removeSeries(id: string, actor: string): Promise<{ detachedFolders: number; detachedItems: number }> {
+  if (usingBackend()) return remote.removeSeries(id)
   if (!seriesStore.some(s => s.id === id && s.owner === actor)) return fail('系列不存在', 404)
   const childFolders = folderStore.filter(f => (f.seriesIds ?? []).includes(id))
   for (const folder of childFolders) {

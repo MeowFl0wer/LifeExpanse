@@ -5,9 +5,10 @@ import MediaInsertMenu from '../components/MediaInsertMenu'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import {
   getContentBySlug, updateContentItem,
-  folders as allFolders, series as allSeries, addFolder, addSeries, nextId } from '../mockData'
-import { extractHashTags, normaliseMembership } from '../lib/library'
+  folders as allFolders, series as allSeries, nextId } from '../mockData'
+import { extractHashTags } from '../lib/library'
 import LibraryPicker from '../components/LibraryPicker'
+import { updatePkm, createFolder, createSeriesEntry } from '../api/pkm'
 import AutosaveIndicator from '../components/AutosaveStatus'
 import DraftRestoredBanner from '../components/DraftRestoredBanner'
 import { useAutosave } from '../hooks/useAutosave'
@@ -167,25 +168,46 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
         ...extractHashTags(body),
       ])
     )
-    updateContentItem(item!.id, {
-      title: title.trim(),
-      body,
-      visibility,
-      allowComments,
-      summary: summary.trim(),
-      cover: cover.trim() || undefined,
-      category: category.trim() || undefined,
-      seoTitle: seoTitle.trim() || undefined,
-      seoDescription: seoDescription.trim() || undefined,
-      favorite,
-      archived,
-      tags: tagNames.map(name => ({ id: nextId('tag'), name })),
-      ...(item!.type === 'pkm'
-        ? { contentKind, ...normaliseMembership({ folderIds, seriesIds }, allFolders) }
-        : {}),
-      ...(item!.type === 'thought' ? { thoughtType } : {}),
-      updatedAt: new Date().toISOString(),
-    })
+    // PKM writes go through the data layer so ownership is enforced there;
+    // other types still update the store directly for now.
+    if (item!.type === 'pkm') {
+      try {
+        await updatePkm(item!.id, currentUser!, {
+          title: title.trim(),
+          body,
+          summary: summary.trim(),
+          visibility,
+          contentKind,
+          allowComments,
+          tagNames,
+          folderIds,
+          seriesIds,
+          cover: cover.trim() || undefined,
+          category: category.trim() || undefined,
+          seoTitle: seoTitle.trim() || undefined,
+          seoDescription: seoDescription.trim() || undefined,
+          favorite,
+          archived,
+        })
+      } catch (err) {
+        setSaving(false)
+        alert(err instanceof Error ? err.message : '保存失败，请重试。')
+        return
+      }
+    } else {
+      updateContentItem(item!.id, {
+        title: title.trim(),
+        body,
+        visibility,
+        allowComments,
+        summary: summary.trim(),
+        favorite,
+        archived,
+        tags: tagNames.map(name => ({ id: nextId('tag'), name })),
+        ...(item!.type === 'thought' ? { thoughtType } : {}),
+        updatedAt: new Date().toISOString(),
+      })
+    }
 
     autosave.discard()
     setSaving(false)
@@ -526,17 +548,15 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
                 folderIds={folderIds}
                 seriesIds={seriesIds}
                 onChange={next => { setFolderIds(next.folderIds); setSeriesIds(next.seriesIds) }}
-                onCreateFolder={name => {
-                  const id = `fd-${Date.now()}`
-                  addFolder({ id, owner: item.author, name, createdAt: new Date().toISOString() })
+                onCreateFolder={async name => {
+                  const folder = await createFolder(item.author, { name })
                   bumpLibrary(n => n + 1)
-                  return id
+                  return folder.id
                 }}
-                onCreateSeries={name => {
-                  const id = `sr-${Date.now()}`
-                  addSeries({ id, owner: item.author, name, createdAt: new Date().toISOString() })
+                onCreateSeries={async name => {
+                  const entry = await createSeriesEntry(item.author, { name })
                   bumpLibrary(n => n + 1)
-                  return id
+                  return entry.id
                 }}
               />
             </div>

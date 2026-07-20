@@ -9,10 +9,13 @@ import TagFilterStrip from '../components/TagFilterStrip'
 import { visibilityConfig } from '../components/VisibilityBadge'
 import {
   allContent, addContentItem, makeUniqueSlug,
-  addFolder, addSeries, updateFolder, updateSeries, nextId,
+  nextId,
 } from '../mockData'
 import { itemsInFolder, foldersInSeries, looseItemsInSeries, allItemsInSeries } from '../lib/library'
-import { removeFolder, removeSeries, listPkm, listFolders, listSeries } from '../api/pkm'
+import {
+  removeFolder, removeSeries, listPkm, listFolders, listSeries,
+  createFolder, createSeriesEntry, saveFolder, saveSeries,
+} from '../api/pkm'
 import { loginUrlFor } from '../lib/redirect'
 import { useAutosave } from '../hooks/useAutosave'
 import { loadDraft, createKey } from '../api/drafts'
@@ -109,7 +112,9 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     if (sec !== 'pkm' || !username) return
     let cancelled = false
     void Promise.all([
-      listPkm({ author: username, viewer: currentUser, includeArchived: true }),
+      // Archived content stays out of the default lists; the Drafts view and
+      // an explicit filter are the only ways to reach it.
+      listPkm({ author: username, viewer: currentUser }),
       listFolders(username, currentUser),
       listSeries(username, currentUser),
     ]).then(([items, fs, ss]) => {
@@ -268,15 +273,12 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     bumpStore(n => n + 1)
   }
 
-  function handleCreateFolder(draft: LibraryItemDraft) {
-    addFolder({
-      id: nextId('fd'),
-      owner: username ?? 'euan',
+  async function handleCreateFolder(draft: LibraryItemDraft) {
+    await createFolder(currentUser!, {
       name: draft.name,
       description: draft.description,
       cover: draft.cover,
       seriesIds: draft.seriesIds,
-      createdAt: new Date().toISOString(),
     })
     setShowFolderForm(false)
     bumpStore(n => n + 1)
@@ -302,14 +304,11 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     alert(`已删除系列。${detachedFolders} 个文件夹、${detachedItems} 条内容已脱离该系列。`)
   }
 
-  function handleCreateSeries(draft: LibraryItemDraft) {
-    addSeries({
-      id: nextId('sr'),
-      owner: username ?? 'euan',
+  async function handleCreateSeries(draft: LibraryItemDraft) {
+    await createSeriesEntry(currentUser!, {
       name: draft.name,
       description: draft.description,
       cover: draft.cover,
-      createdAt: new Date().toISOString(),
     })
     setShowSeriesForm(false)
     bumpStore(n => n + 1)
@@ -513,13 +512,14 @@ export default function ContentListPage({ section }: ContentListPageProps) {
             onDeleteFolder={handleDeleteFolder}
             onDeleteSeries={handleDeleteSeries}
             onSaveSeries={(id, draft) => {
-              updateSeries(id, {
+              void saveSeries(id, currentUser!, {
                 name: draft.name,
                 description: draft.description,
                 cover: draft.cover,
+              }).then(() => {
+                setEditingSeries(false)
+                bumpStore(n => n + 1)
               })
-              setEditingSeries(false)
-              bumpStore(n => n + 1)
             }}
             onShowFolderForm={setShowFolderForm}
             onShowSeriesForm={setShowSeriesForm}
@@ -527,14 +527,15 @@ export default function ContentListPage({ section }: ContentListPageProps) {
             onCreateFolder={handleCreateFolder}
             onCreateSeries={handleCreateSeries}
             onSaveFolder={(id, draft) => {
-              updateFolder(id, {
+              void saveFolder(id, currentUser!, {
                 name: draft.name,
                 description: draft.description,
                 cover: draft.cover,
                 seriesIds: draft.seriesIds,
+              }).then(() => {
+                setEditingFolder(false)
+                bumpStore(n => n + 1)
               })
-              setEditingFolder(false)
-              bumpStore(n => n + 1)
             }}
           />
         ) : (

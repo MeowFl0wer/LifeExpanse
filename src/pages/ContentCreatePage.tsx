@@ -6,10 +6,11 @@ import MarkdownRenderer from '../components/MarkdownRenderer'
 import { useCurrentUser } from '../auth'
 import {
   addContentItem, addTrajectoryEntry, recordFootprintVisit, makeUniqueSlug,
-  folders as allFolders, series as allSeries, addFolder, addSeries, nextId } from '../mockData'
+  folders as allFolders, series as allSeries, nextId } from '../mockData'
 import { slugify } from '../lib/slug'
-import { extractHashTags, normaliseMembership } from '../lib/library'
+import { extractHashTags } from '../lib/library'
 import LibraryPicker from '../components/LibraryPicker'
+import { createPkm, createFolder, createSeriesEntry } from '../api/pkm'
 import AutosaveIndicator from '../components/AutosaveStatus'
 import DraftRestoredBanner from '../components/DraftRestoredBanner'
 import { useAutosave } from '../hooks/useAutosave'
@@ -142,18 +143,16 @@ export default function ContentCreatePage() {
     return () => { cancelled = true }
   }, [createType, draftChecked])
 
-  function createFolder(name: string): string {
-    const id = nextId('fd')
-    addFolder({ id, owner: currentUser ?? 'euan', name, createdAt: new Date().toISOString() })
+  async function createFolderInline(name: string): Promise<string> {
+    const folder = await createFolder(currentUser!, { name })
     bumpLibrary(n => n + 1)
-    return id
+    return folder.id
   }
 
-  function createSeries(name: string): string {
-    const id = nextId('sr')
-    addSeries({ id, owner: currentUser ?? 'euan', name, createdAt: new Date().toISOString() })
+  async function createSeriesInline(name: string): Promise<string> {
+    const entry = await createSeriesEntry(currentUser!, { name })
     bumpLibrary(n => n + 1)
-    return id
+    return entry.id
   }
 
   // #tags typed into the body are captured alongside the comma-separated field.
@@ -288,6 +287,31 @@ export default function ContentCreatePage() {
     }
 
     const type: ContentType = createType === 'thought' ? 'thought' : createType === 'diary' ? 'diary' : 'pkm'
+
+    // PKM goes through the data layer, which owns slug allocation, membership
+    // normalisation and the ownership rule. Other types still write directly
+    // and will migrate the same way.
+    if (type === 'pkm') {
+      try {
+        const created = await createPkm(currentUser!, {
+          title: title.trim() || body.trim().slice(0, 30),
+          body: body.trim(),
+          contentKind,
+          visibility,
+          tagNames: tags.map(t => t.name),
+          folderIds,
+          seriesIds,
+        })
+        autosave.discard()
+        setSaving(false)
+        navigate(`/${currentUser}/${config.section}/${created.slug}`)
+      } catch (err) {
+        setSaving(false)
+        alert(err instanceof Error ? err.message : '保存失败，请重试。')
+      }
+      return
+    }
+
     const slug = makeUniqueSlug(slugify(title || body.slice(0, 30), `entry-${Date.now()}`))
     const item: ContentItem = {
       id: nextId('c'),
@@ -302,13 +326,6 @@ export default function ContentCreatePage() {
       updatedAt: now,
       publishedAt: visibility === 'draft' ? '' : now,
       author: currentUser!,
-      ...(type === 'pkm'
-        ? {
-            contentKind,
-            allowComments: contentKind === 'article',
-            ...normaliseMembership({ folderIds, seriesIds }, allFolders),
-          }
-        : {}),
       ...(type === 'thought'
         ? {
             thoughtType,
@@ -548,8 +565,8 @@ export default function ContentCreatePage() {
                 folderIds={folderIds}
                 seriesIds={seriesIds}
                 onChange={next => { setFolderIds(next.folderIds); setSeriesIds(next.seriesIds) }}
-                onCreateFolder={createFolder}
-                onCreateSeries={createSeries}
+                onCreateFolder={createFolderInline}
+                onCreateSeries={createSeriesInline}
               />
             </div>
           )}

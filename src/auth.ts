@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { clearDraftsFor } from './api/drafts'
+import { logout as apiLogout } from './api/auth'
 
 const SESSION_KEY = 'life_session_user'
 
@@ -70,6 +71,8 @@ export function clearCurrentUser(): void {
   // them visible to whoever signs in next on this browser.
   const leaving = cachedUser
   if (leaving) void clearDraftsFor(leaving)
+  // Ends the server session as well, not just the local copy.
+  void apiLogout()
   try {
     window.localStorage.removeItem(SESSION_KEY)
     window.sessionStorage.removeItem(SESSION_KEY)

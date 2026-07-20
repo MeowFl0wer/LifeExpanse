@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Logo from '../components/Logo'
 import { setCurrentUser } from '../auth'
+import { login as apiLogin } from '../api/auth'
 import { safeNextPath } from '../lib/redirect'
 
 type LoginState = 'idle' | 'loading' | 'error' | 'success'
@@ -53,25 +54,20 @@ export default function LoginPage() {
     setState('loading')
     setErrorMsg('')
 
-    // Simulate network delay
-    await new Promise(r => setTimeout(r, 1200))
-    if (!mounted.current) return
-
-    // Mock: only accept euan / demo123456
-    if (
-      (credential === 'euan' || credential === 'euan@example.com') &&
-      password === 'demo123456'
-    ) {
-      setCurrentUser('euan', { remember })
+    try {
+      const account = await apiLogin(credential, password, remember)
+      if (!mounted.current) return
+      setCurrentUser(account.username, { remember })
       setState('success')
       // Brief pause so the success state is visible before leaving.
       redirectTimer.current = window.setTimeout(() => {
         redirectTimer.current = null
         if (mounted.current) navigate(next)
       }, 600)
-    } else {
+    } catch (err) {
+      if (!mounted.current) return
       setState('error')
-      setErrorMsg('用户名或密码不正确，请重试。（提示：用户名 euan，密码 demo123456）')
+      setErrorMsg(err instanceof Error ? err.message : '登录失败，请重试。')
     }
   }
 

@@ -94,8 +94,12 @@ def create(payload: ContentIn, actor: User = Depends(current_user), db: Session 
         cover=payload.cover,
         seo_title=payload.seo_title,
         seo_description=payload.seo_description,
-        allow_comments=payload.allow_comments if payload.allow_comments is not None
-        else payload.content_kind == "article",
+        # Enforced rather than trusted: a note cannot be created with comments on.
+        allow_comments=(
+            payload.type == "pkm"
+            and payload.content_kind == "article"
+            and (payload.allow_comments if payload.allow_comments is not None else True)
+        ),
         favorite=bool(payload.favorite),
         archived=bool(payload.archived),
         source_author=payload.source_author,
@@ -130,10 +134,17 @@ def update(
         item.title = str(data["title"]).strip()
     for field in (
         "body", "summary", "visibility", "content_kind", "thought_type", "category",
-        "cover", "seo_title", "seo_description", "allow_comments", "favorite", "archived",
+        "cover", "seo_title", "seo_description", "favorite", "archived",
     ):
         if field in data:
             setattr(item, field, data[field])
+
+    # Applied after content_kind so switching form and flag in one request
+    # cannot leave a note with comments enabled.
+    if "allow_comments" in data:
+        item.allow_comments = svc.normalise_comment_flag(item, data["allow_comments"])
+    elif "content_kind" in data:
+        item.allow_comments = svc.normalise_comment_flag(item, item.allow_comments)
 
     if "tags" in data:
         svc.set_tags(db, item, data["tags"] or [])

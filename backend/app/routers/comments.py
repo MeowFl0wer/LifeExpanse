@@ -49,7 +49,9 @@ def add_comment(
     """需求 11: only registered, signed-in users may comment, and only where the
     author switched comments on."""
     item = _readable(db, content_id, actor)
-    if not item.allow_comments:
+    # Checks the current form as well as the flag, so a reverted article
+    # cannot keep accepting comments.
+    if not svc.comments_allowed_for(item):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "这篇内容没有开启评论")
     comment = Comment(content_id=item.id, author_id=actor.id, body=payload.body.strip())
     db.add(comment)
