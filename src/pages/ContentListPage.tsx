@@ -9,11 +9,10 @@ import TagFilterStrip from '../components/TagFilterStrip'
 import { visibilityConfig } from '../components/VisibilityBadge'
 import {
   allContent, addContentItem, makeUniqueSlug,
-  folders as allFolders, series as allSeries,
   addFolder, addSeries, updateFolder, updateSeries, nextId,
 } from '../mockData'
 import { itemsInFolder, foldersInSeries, looseItemsInSeries, allItemsInSeries } from '../lib/library'
-import { removeFolder, removeSeries } from '../api/pkm'
+import { removeFolder, removeSeries, listPkm, listFolders, listSeries } from '../api/pkm'
 import { loginUrlFor } from '../lib/redirect'
 import { useAutosave } from '../hooks/useAutosave'
 import { loadDraft, createKey } from '../api/drafts'
@@ -89,7 +88,8 @@ export default function ContentListPage({ section }: ContentListPageProps) {
   const [editingFolder, setEditingFolder] = useState(false)
   const [editingSeries, setEditingSeries] = useState(false)
   // Library and content live in a module-level mock store; this re-reads it.
-  const [, bumpStore] = useState(0)
+  const [storeTick, setStoreTick] = useState(0)
+  const bumpStore = (fn: (n: number) => number) => setStoreTick(fn)
 
   function setDrill(next: { folder?: string; series?: string }) {
     const params = new URLSearchParams()
@@ -99,19 +99,41 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     setEditingFolder(false)
   }
 
-  // Everything this viewer may see in this section.
-  const baseItems = allContent.filter(c => {
-    if (!matchesSection(c, sec)) return false
-    if (c.author !== username) return false
-    if (!isOwner && c.visibility !== 'public') return false
-    return true
-  })
+  // PKM is served by the data layer, which owns the permission rules. Other
+  // sections still read the store directly and will migrate the same way.
+  const [pkmItems, setPkmItems] = useState<ContentItem[] | null>(null)
+  const [pkmFolders, setPkmFolders] = useState<Folder[]>([])
+  const [pkmSeries, setPkmSeries] = useState<Series[]>([])
+
+  useEffect(() => {
+    if (sec !== 'pkm' || !username) return
+    let cancelled = false
+    void Promise.all([
+      listPkm({ author: username, viewer: currentUser, includeArchived: true }),
+      listFolders(username, currentUser),
+      listSeries(username, currentUser),
+    ]).then(([items, fs, ss]) => {
+      if (cancelled) return
+      setPkmItems(items)
+      setPkmFolders(fs)
+      setPkmSeries(ss)
+    })
+    return () => { cancelled = true }
+  }, [sec, username, currentUser, storeTick])
+
+  const baseItems =
+    sec === 'pkm'
+      ? (pkmItems ?? [])
+      : allContent.filter(c => {
+          if (!matchesSection(c, sec)) return false
+          if (c.author !== username) return false
+          if (!isOwner && c.visibility !== 'public') return false
+          return true
+        })
 
   // A folder or series is itself metadata: its name and description would leak
   // the shape of a private library. A guest only sees ones that actually hold
   // something public.
-  const authorFolders = allFolders.filter(f => f.owner === username)
-  const authorSeries = allSeries.filter(s => s.owner === username)
   // The quick capture box is easy to abandon by navigating away, so it keeps
   // its own draft too.
   interface QuickDraft {
@@ -121,7 +143,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     quickSourceTitle: string
   }
   const quickAutosave = useAutosave<QuickDraft>({
-    key: sec === 'thoughts' && isOwner ? createKey('quick-thought') : null,
+    key: sec === 'thoughts' && isOwner ? createKey(currentUser ?? '', 'quick-thought') : null,
     value: { quickText, quickThoughtType, quickSourceAuthor, quickSourceTitle },
     dirty: quickText.trim().length > 0,
   })
@@ -129,7 +151,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
   useEffect(() => {
     if (sec !== 'thoughts' || !isOwner || quickDraftChecked) return
     let cancelled = false
-    void loadDraft<QuickDraft>(createKey('quick-thought')).then(draft => {
+    void loadDraft<QuickDraft>(createKey(currentUser ?? '', 'quick-thought')).then(draft => {
       if (cancelled) return
       if (draft?.data.quickText) {
         setQuickText(draft.data.quickText)
@@ -142,12 +164,9 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     return () => { cancelled = true }
   }, [sec, isOwner, quickDraftChecked])
 
-  const ownFolders = isOwner
-    ? authorFolders
-    : authorFolders.filter(f => itemsInFolder(baseItems, f.id).length > 0)
-  const ownSeries = isOwner
-    ? authorSeries
-    : authorSeries.filter(s => allItemsInSeries(baseItems, authorFolders, s.id).length > 0)
+  // Supplied by the data layer, which already applied the visibility rules.
+  const ownFolders = pkmFolders
+  const ownSeries = pkmSeries
 
   // Drill-in lives in the URL so back/forward work. Resolving against the
   // filtered lists — not the raw store — means a hand-typed ?folder=<id> for a
@@ -267,7 +286,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     if (!window.confirm(
       `删除文件夹「${name}」？\n\n里面的内容不会被删除，只会变成未归类。`
     )) return
-    const { detached } = await removeFolder(id)
+    const { detached } = await removeFolder(id, currentUser!)
     setDrill({})
     bumpStore(n => n + 1)
     alert(detached > 0 ? `已删除文件夹，${detached} 条内容已变为未归类。` : '已删除文件夹。')
@@ -277,7 +296,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     if (!window.confirm(
       `删除系列「${name}」？\n\n里面的文件夹和内容都不会被删除，只会脱离这个系列。`
     )) return
-    const { detachedFolders, detachedItems } = await removeSeries(id)
+    const { detachedFolders, detachedItems } = await removeSeries(id, currentUser!)
     setDrill({})
     bumpStore(n => n + 1)
     alert(`已删除系列。${detachedFolders} 个文件夹、${detachedItems} 条内容已脱离该系列。`)

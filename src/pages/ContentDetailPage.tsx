@@ -7,8 +7,9 @@ import VisibilityBadge from '../components/VisibilityBadge'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import CommentSection from '../components/CommentSection'
 import ArticleToc from '../components/ArticleToc'
-import { publishAsArticle, revertToNote, getLinkGraph, type LinkGraph } from '../api/pkm'
+import { publishAsArticle, revertToNote, getLinkGraph, getPkmBySlug, type LinkGraph } from '../api/pkm'
 import { getContentBySlug, deleteContentItem, folders as allFolders, series as allSeries } from '../mockData'
+import type { ContentItem } from '../types'
 import { locationTrail } from '../lib/library'
 import { useCurrentUser } from '../auth'
 
@@ -57,7 +58,20 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
   const { username, slug } = useParams<{ username: string; slug: string }>()
   const navigate = useNavigate()
   const currentUser = useCurrentUser()
-  const item = getContentBySlug(slug ?? '')
+  // PKM goes through the data layer so the author/type/visibility rules are
+  // applied in one place instead of being re-derived here.
+  const [pkmItem, setPkmItem] = useState<ContentItem | null | undefined>(undefined)
+  useEffect(() => {
+    if (section !== 'pkm') { setPkmItem(undefined); return }
+    let cancelled = false
+    getPkmBySlug({ author: username ?? '', slug: slug ?? '', viewer: currentUser })
+      .then(found => { if (!cancelled) setPkmItem(found) })
+      .catch(() => { if (!cancelled) setPkmItem(null) })
+    return () => { cancelled = true }
+  }, [section, username, slug, currentUser])
+
+  const item = section === 'pkm' ? pkmItem ?? undefined : getContentBySlug(slug ?? '')
+  const loadingPkm = section === 'pkm' && pkmItem === undefined
   const [localContentKind, setLocalContentKind] = useState(item?.contentKind)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [links, setLinks] = useState<LinkGraph | null>(null)
@@ -78,6 +92,18 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
   // Private and draft content must be unreachable by anyone but its author —
   // including by guessing the slug. Returning the same 404 as a missing item
   // avoids leaking the fact that the content exists at all.
+  if (loadingPkm) {
+    return (
+      <div className="life-page flex min-h-screen flex-col">
+        <PublicHeader />
+        <main className="flex flex-1 items-center justify-center">
+          <p className="text-sm text-[color:var(--muted-foreground)]">加载中…</p>
+        </main>
+        <Footer />
+      </div>
+    )
+  }
+
   if (!item || (item.visibility !== 'public' && !isOwner)) {
     return (
       <div className="life-page flex min-h-screen flex-col">
@@ -106,7 +132,7 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
   async function handlePublishAsArticle() {
     setBusy(true)
     try {
-      const updated = await publishAsArticle(item!.id)
+      const updated = await publishAsArticle(item!.id, currentUser!)
       setLocalContentKind(updated.contentKind)
     } catch {
       alert('发布失败，请重试。')
@@ -119,7 +145,7 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
     if (!window.confirm('退回笔记状态后，公开链接和评论可能受到影响。确定继续吗？')) return
     setBusy(true)
     try {
-      const updated = await revertToNote(item!.id)
+      const updated = await revertToNote(item!.id, currentUser!)
       setLocalContentKind(updated.contentKind)
     } catch {
       alert('操作失败，请重试。')

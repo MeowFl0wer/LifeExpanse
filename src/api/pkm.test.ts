@@ -62,8 +62,8 @@ describe('permission filtering lives in the data layer', () => {
   it('returns the same 404 for hidden and missing content', async () => {
     const hidden = await makeNote({ visibility: 'draft' })
 
-    const hiddenErr = await getPkmBySlug(hidden.slug, null).catch(e => e as ApiError)
-    const missingErr = await getPkmBySlug('no-such-slug', null).catch(e => e as ApiError)
+    const hiddenErr = await getPkmBySlug({ author: 'euan', slug: hidden.slug, viewer: null }).catch(e => e as ApiError)
+    const missingErr = await getPkmBySlug({ author: 'euan', slug: 'no-such-slug', viewer: null }).catch(e => e as ApiError)
 
     expect(hiddenErr).toBeInstanceOf(ApiError)
     expect((hiddenErr as ApiError).status).toBe(404)
@@ -120,7 +120,7 @@ describe('create and update', () => {
 
   it('updates only the fields provided', async () => {
     const item = await makeNote({ summary: '原摘要' })
-    const updated = await updatePkm(item.id, { title: '新标题' })
+    const updated = await updatePkm(item.id, 'euan', { title: '新标题' })
     expect(updated.title).toBe('新标题')
     expect(updated.summary).toBe('原摘要')
   })
@@ -129,7 +129,7 @@ describe('create and update', () => {
 describe('note and article forms', () => {
   it('publishing keeps the same id and body', async () => {
     const note = await makeNote({ body: '原始正文' })
-    const article = await publishAsArticle(note.id)
+    const article = await publishAsArticle(note.id, 'euan')
 
     expect(article.id).toBe(note.id)
     expect(article.body).toBe('原始正文')
@@ -139,13 +139,13 @@ describe('note and article forms', () => {
 
   it('publishing persists rather than only changing the view', async () => {
     const note = await makeNote()
-    await publishAsArticle(note.id)
+    await publishAsArticle(note.id, 'euan')
     expect(allContent.find(c => c.id === note.id)!.contentKind).toBe('article')
   })
 
   it('reverting turns comments off', async () => {
     const note = await makeNote({ contentKind: 'article', allowComments: true })
-    const reverted = await revertToNote(note.id)
+    const reverted = await revertToNote(note.id, 'euan')
     expect(reverted.contentKind).toBe('note')
     expect(reverted.allowComments).toBe(false)
   })
@@ -154,7 +154,7 @@ describe('note and article forms', () => {
 describe('favourite and archive', () => {
   it('archived content is out of the default listing', async () => {
     const item = await makeNote()
-    await toggleArchived(item.id, true)
+    await toggleArchived(item.id, 'euan', true)
 
     const normal = await listPkm({ author: 'euan', viewer: 'euan' })
     const withArchived = await listPkm({ author: 'euan', viewer: 'euan', includeArchived: true })
@@ -165,7 +165,7 @@ describe('favourite and archive', () => {
 
   it('can filter to favourites', async () => {
     const item = await makeNote()
-    await toggleFavourite(item.id, true)
+    await toggleFavourite(item.id, 'euan', true)
     const faves = await listPkm({ author: 'euan', viewer: 'euan', favouriteOnly: true })
     expect(faves.every(c => c.favorite)).toBe(true)
     expect(faves.some(c => c.id === item.id)).toBe(true)
@@ -230,7 +230,7 @@ describe('library', () => {
     const folder = await createFolder('euan', { name: '待删文件夹' })
     const item = await makeNote({ folderIds: [folder.id] })
 
-    const result = await removeFolder(folder.id)
+    const result = await removeFolder(folder.id, 'euan')
 
     expect(result.detached).toBe(1)
     expect(allContent.some(c => c.id === item.id)).toBe(true)
@@ -244,7 +244,7 @@ describe('library', () => {
     createdFolders.push(folder.id)
     const item = await makeNote({ seriesIds: [entry.id] })
 
-    const result = await removeSeries(entry.id)
+    const result = await removeSeries(entry.id, 'euan')
 
     expect(result.detachedFolders).toBe(1)
     expect(result.detachedItems).toBe(1)
@@ -259,23 +259,77 @@ describe('library', () => {
     const folder = await createFolder('euan', { name: '会改归属的文件夹' })
     createdFolders.push(folder.id)
 
-    const saved = await saveFolder(folder.id, { name: '改名后', seriesIds: [entry.id] })
+    const saved = await saveFolder(folder.id, 'euan', { name: '改名后', seriesIds: [entry.id] })
 
     expect(saved.name).toBe('改名后')
     expect(saved.seriesIds).toEqual([entry.id])
   })
 })
 
+describe('ownership is enforced in the data layer', () => {
+  it('another user cannot update your content', async () => {
+    const item = await makeNote()
+    await expect(updatePkm(item.id, 'alice', { title: '被别人改了' })).rejects.toThrow('内容不存在')
+    expect(allContent.find(c => c.id === item.id)!.title).toBe(item.title)
+  })
+
+  it('another user cannot delete your content', async () => {
+    const item = await makeNote()
+    await expect(deletePkm(item.id, 'alice')).rejects.toThrow('内容不存在')
+    expect(allContent.some(c => c.id === item.id)).toBe(true)
+  })
+
+  it('another user cannot publish your note', async () => {
+    const item = await makeNote()
+    await expect(publishAsArticle(item.id, 'alice')).rejects.toThrow('内容不存在')
+  })
+
+  it('another user cannot rename or delete your folder', async () => {
+    const folder = await createFolder('euan', { name: '我的文件夹' })
+    createdFolders.push(folder.id)
+    await expect(saveFolder(folder.id, 'alice', { name: '改名' })).rejects.toThrow('文件夹不存在')
+    await expect(removeFolder(folder.id, 'alice')).rejects.toThrow('文件夹不存在')
+  })
+
+  it('another user cannot delete your series', async () => {
+    const entry = await createSeriesEntry('euan', { name: '我的系列' })
+    createdSeries.push(entry.id)
+    await expect(removeSeries(entry.id, 'alice')).rejects.toThrow('系列不存在')
+  })
+})
+
+describe('lookups are scoped to author and type', () => {
+  it('does not serve one author’s slug under another author', async () => {
+    const item = await makeNote()
+    await expect(
+      getPkmBySlug({ author: 'alice', slug: item.slug, viewer: 'euan' })
+    ).rejects.toThrow('内容不存在')
+  })
+
+  it('does not serve a diary entry through the pkm route', async () => {
+    // 'demo-diary' is seed diary content belonging to euan.
+    await expect(
+      getPkmBySlug({ author: 'euan', slug: 'demo-diary', viewer: 'euan' })
+    ).rejects.toThrow('内容不存在')
+  })
+
+  it('serves the author’s own pkm slug', async () => {
+    const item = await makeNote()
+    const found = await getPkmBySlug({ author: 'euan', slug: item.slug, viewer: null })
+    expect(found.id).toBe(item.id)
+  })
+})
+
 describe('delete', () => {
   it('moves content to the recycle bin', async () => {
     const item = await makeNote()
-    await deletePkm(item.id)
+    await deletePkm(item.id, 'euan')
 
     expect(allContent.some(c => c.id === item.id)).toBe(false)
     expect(trashedItems.some(t => t.item.id === item.id)).toBe(true)
   })
 
   it('rejects an unknown id', async () => {
-    await expect(deletePkm('nope')).rejects.toThrow('内容不存在')
+    await expect(deletePkm('nope', 'euan')).rejects.toThrow('内容不存在')
   })
 })

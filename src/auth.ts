@@ -65,6 +65,10 @@ export function setCurrentUser(username: string, options: { remember?: boolean }
 }
 
 export function clearCurrentUser(): void {
+  // Drafts belong to the person who wrote them; logging out must not leave
+  // them visible to whoever signs in next on this browser.
+  const leaving = cachedUser
+  if (leaving) void import('./api/drafts').then(m => m.clearDraftsFor(leaving))
   try {
     window.localStorage.removeItem(SESSION_KEY)
     window.sessionStorage.removeItem(SESSION_KEY)

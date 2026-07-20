@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { saveDraft, loadDraft, clearDraft, listDrafts, editKey, createKey } from './drafts'
+import { saveDraft, loadDraft, clearDraft, clearDraftsFor, listDrafts, editKey, createKey } from './drafts'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -9,9 +9,15 @@ beforeEach(() => {
 
 describe('draft keys', () => {
   it('separates editing from creating', () => {
-    expect(editKey('c-1')).toBe('edit:c-1')
-    expect(createKey('note')).toBe('new:note')
-    expect(editKey('c-1')).not.toBe(createKey('c-1'))
+    expect(editKey('euan', 'c-1')).toBe('euan:edit:c-1')
+    expect(createKey('euan', 'note')).toBe('euan:new:note')
+    expect(editKey('euan', 'c-1')).not.toBe(createKey('euan', 'c-1'))
+  })
+
+  // Two people on one browser must not inherit each other's unsaved work.
+  it('scopes keys to the owner', () => {
+    expect(createKey('euan', 'note')).not.toBe(createKey('alice', 'note'))
+    expect(editKey('euan', 'c-1')).not.toBe(editKey('alice', 'c-1'))
   })
 })
 
@@ -91,6 +97,23 @@ describe('resilience', () => {
   it('discards an entry with no timestamp', async () => {
     window.localStorage.setItem('life_draft:new:note', JSON.stringify({ data: { title: 'x' } }))
     expect(await loadDraft('new:note')).toBeNull()
+  })
+})
+
+describe('clearDraftsFor', () => {
+  it('removes only that user’s drafts', async () => {
+    await saveDraft(createKey('euan', 'note'), { title: 'euan 的草稿' })
+    await saveDraft(createKey('alice', 'note'), { title: 'alice 的草稿' })
+
+    const removed = await clearDraftsFor('euan')
+
+    expect(removed).toBe(1)
+    expect(await loadDraft(createKey('euan', 'note'))).toBeNull()
+    expect(await loadDraft(createKey('alice', 'note'))).not.toBeNull()
+  })
+
+  it('is safe when the user has none', async () => {
+    expect(await clearDraftsFor('nobody')).toBe(0)
   })
 })
 

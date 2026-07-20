@@ -68,7 +68,7 @@ describe('create page autosave', () => {
     await user.type(screen.getByLabelText(/正文/), '正文也写了一点')
 
     await waitFor(async () => {
-      const draft = await loadDraft<{ title: string; body: string }>(createKey('note'))
+      const draft = await loadDraft<{ title: string; body: string }>(createKey('euan', 'note'))
       expect(draft?.data.title).toBe('写了一半的笔记')
       expect(draft?.data.body).toBe('正文也写了一点')
     }, { timeout: 3000 })
@@ -80,7 +80,7 @@ describe('create page autosave', () => {
     const first = renderCreate()
     await user.type(screen.getByLabelText(/标题/), '未完成的标题')
     await waitFor(async () =>
-      expect((await loadDraft(createKey('note')))).not.toBeNull(), { timeout: 3000 })
+      expect((await loadDraft(createKey('euan', 'note')))).not.toBeNull(), { timeout: 3000 })
     first.unmount()
 
     renderCreate()
@@ -96,7 +96,7 @@ describe('create page autosave', () => {
     const first = renderCreate()
     await user.type(screen.getByLabelText(/标题/), '不想要的内容')
     await waitFor(async () =>
-      expect(await loadDraft(createKey('note'))).not.toBeNull(), { timeout: 3000 })
+      expect(await loadDraft(createKey('euan', 'note'))).not.toBeNull(), { timeout: 3000 })
     first.unmount()
 
     renderCreate()
@@ -104,7 +104,7 @@ describe('create page autosave', () => {
     await user.click(screen.getByRole('button', { name: '放弃草稿' }))
 
     expect((screen.getByLabelText(/标题/) as HTMLInputElement).value).toBe('')
-    await waitFor(async () => expect(await loadDraft(createKey('note'))).toBeNull())
+    await waitFor(async () => expect(await loadDraft(createKey('euan', 'note'))).toBeNull())
   })
 
   it('keeps drafts of different types apart', async () => {
@@ -112,7 +112,7 @@ describe('create page autosave', () => {
     const note = renderCreate('note')
     await user.type(screen.getByLabelText(/标题/), '笔记草稿')
     await waitFor(async () =>
-      expect(await loadDraft(createKey('note'))).not.toBeNull(), { timeout: 3000 })
+      expect(await loadDraft(createKey('euan', 'note'))).not.toBeNull(), { timeout: 3000 })
     note.unmount()
 
     renderCreate('diary')
@@ -131,13 +131,13 @@ describe('create page autosave', () => {
     await user.type(screen.getByLabelText(/正文/), '正文内容')
     // Ensure a draft exists first, so its removal is meaningful.
     await waitFor(async () =>
-      expect(await loadDraft(createKey('note'))).not.toBeNull(), { timeout: 3000 })
+      expect(await loadDraft(createKey('euan', 'note'))).not.toBeNull(), { timeout: 3000 })
 
     await user.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() =>
       expect(allContent.some(c => c.title === '真的要保存')).toBe(true), { timeout: 3000 })
-    expect(await loadDraft(createKey('note'))).toBeNull()
+    expect(await loadDraft(createKey('euan', 'note'))).toBeNull()
 
     const created = allContent.find(c => c.title === '真的要保存')
     if (created) made.push(created.id)
@@ -154,7 +154,7 @@ describe('edit page autosave', () => {
     await user.type(screen.getByLabelText('正文'), '改到一半的正文')
 
     await waitFor(async () => {
-      const draft = await loadDraft<{ body: string }>(editKey(note.id))
+      const draft = await loadDraft<{ body: string }>(editKey('euan', note.id))
       expect(draft?.data.body).toBe('改到一半的正文')
     }, { timeout: 3000 })
 
@@ -170,7 +170,7 @@ describe('edit page autosave', () => {
     await user.clear(screen.getByLabelText('正文'))
     await user.type(screen.getByLabelText('正文'), '离开前写的内容')
     await waitFor(async () =>
-      expect(await loadDraft(editKey(note.id))).not.toBeNull(), { timeout: 3000 })
+      expect(await loadDraft(editKey('euan', note.id))).not.toBeNull(), { timeout: 3000 })
     first.unmount()
 
     await renderEdit(note.slug)
@@ -189,7 +189,7 @@ describe('edit page autosave', () => {
     await user.clear(screen.getByLabelText('正文'))
     await user.type(screen.getByLabelText('正文'), '要丢掉的改动')
     await waitFor(async () =>
-      expect(await loadDraft(editKey(note.id))).not.toBeNull(), { timeout: 3000 })
+      expect(await loadDraft(editKey('euan', note.id))).not.toBeNull(), { timeout: 3000 })
     first.unmount()
 
     await renderEdit(note.slug)
@@ -208,7 +208,7 @@ describe('edit page autosave', () => {
     await user.clear(screen.getByLabelText('正文'))
     await user.type(screen.getByLabelText('正文'), 'A 的草稿')
     await waitFor(async () =>
-      expect(await loadDraft(editKey(a.id))).not.toBeNull(), { timeout: 3000 })
+      expect(await loadDraft(editKey('euan', a.id))).not.toBeNull(), { timeout: 3000 })
     first.unmount()
 
     await renderEdit(b.slug)
@@ -227,13 +227,13 @@ describe('edit page autosave', () => {
     // Let the debounce write a draft, so its removal is meaningful rather than
     // trivially true.
     await waitFor(async () =>
-      expect(await loadDraft(editKey(note.id))).not.toBeNull(), { timeout: 3000 })
+      expect(await loadDraft(editKey('euan', note.id))).not.toBeNull(), { timeout: 3000 })
 
     await user.click(screen.getByRole('button', { name: '保存' }))
 
     // The save is what we are waiting on; the draft is cleared as part of it.
     await waitFor(() =>
       expect(allContent.find(c => c.id === note.id)!.body).toBe('最终内容'), { timeout: 3000 })
-    expect(await loadDraft(editKey(note.id))).toBeNull()
+    expect(await loadDraft(editKey('euan', note.id))).toBeNull()
   })
 })

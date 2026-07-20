@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import ContentDetailPage from './ContentDetailPage'
@@ -50,17 +50,18 @@ describe('delete a note', () => {
     vi.restoreAllMocks()
   })
 
-  it('is not offered to a guest', () => {
+  it('is not offered to a guest', async () => {
     const item = seedItem()
     clearCurrentUser()
     renderDetail(item.slug)
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toBeTruthy())
     expect(screen.queryByRole('button', { name: /删除/ })).toBeNull()
   })
 
-  it('sits next to the edit button for the author', () => {
+  it('sits next to the edit button for the author', async () => {
     const item = seedItem()
     renderDetail(item.slug)
-    expect(screen.getByRole('button', { name: /编辑/ })).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole('button', { name: /编辑/ })).toBeTruthy())
     expect(screen.getByRole('button', { name: /删除/ })).toBeTruthy()
   })
 
@@ -68,6 +69,7 @@ describe('delete a note', () => {
     const user = userEvent.setup()
     const item = seedItem()
     renderDetail(item.slug)
+    await waitFor(() => expect(screen.getByRole('button', { name: /删除/ })).toBeTruthy())
 
     await user.click(screen.getByRole('button', { name: /删除/ }))
 
@@ -80,6 +82,7 @@ describe('delete a note', () => {
     const user = userEvent.setup()
     const item = seedItem()
     renderDetail(item.slug)
+    await waitFor(() => expect(screen.getByRole('button', { name: /删除/ })).toBeTruthy())
 
     await user.click(screen.getByRole('button', { name: /删除/ }))
     await user.click(screen.getByRole('button', { name: '取消' }))
@@ -93,6 +96,7 @@ describe('delete a note', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     const item = seedItem()
     renderDetail(item.slug)
+    await waitFor(() => expect(screen.getByRole('button', { name: /删除/ })).toBeTruthy())
 
     await user.click(screen.getByRole('button', { name: /删除/ }))
     await user.click(screen.getByRole('button', { name: '确认删除' }))
@@ -105,6 +109,7 @@ describe('delete a note', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     const item = seedItem()
     renderDetail(item.slug)
+    await waitFor(() => expect(screen.getByRole('button', { name: /删除/ })).toBeTruthy())
 
     await user.click(screen.getByRole('button', { name: /删除/ }))
     await user.click(screen.getByRole('button', { name: '确认删除' }))

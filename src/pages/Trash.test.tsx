@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import TrashPage from './TrashPage'
@@ -71,7 +71,7 @@ describe('soft delete removes the item from every surface', () => {
     expect(trashedItems.some(t => t.item.id === item.id)).toBe(true)
   })
 
-  it('disappears from the list page', () => {
+  it('disappears from the list page', async () => {
     const item = seed({ title: '会被删掉的笔记' })
     created.push(item.id)
 
@@ -84,6 +84,7 @@ describe('soft delete removes the item from every surface', () => {
       </MemoryRouter>
     )
 
+    await waitFor(() => expect(screen.getByText(/条笔记与文章/)).toBeTruthy())
     expect(screen.queryByText('会被删掉的笔记')).toBeNull()
   })
 
@@ -100,7 +101,7 @@ describe('soft delete removes the item from every surface', () => {
     expect(screen.queryByText('搜索不到的笔记')).toBeNull()
   })
 
-  it('its detail page 404s', () => {
+  it('its detail page 404s', async () => {
     const item = seed()
     created.push(item.id)
     deleteContentItem(item.id)
@@ -113,7 +114,7 @@ describe('soft delete removes the item from every surface', () => {
       </MemoryRouter>
     )
 
-    expect(screen.getByText('404')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('404')).toBeTruthy())
   })
 
   // The homepage and dashboard used to read the seed arrays, so a deleted item

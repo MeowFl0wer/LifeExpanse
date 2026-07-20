@@ -25,14 +25,33 @@ export interface Draft<T> {
   data: T
 }
 
+/*
+ * Keys are scoped to the signed-in user. Without that, two people sharing a
+ * browser would inherit each other's unsaved drafts — euan writes half a note,
+ * logs out, and alice sees it on her create page.
+ */
+
 /** Key for editing an existing item. */
-export function editKey(contentId: string): string {
-  return `edit:${contentId}`
+export function editKey(owner: string, contentId: string): string {
+  return `${owner}:edit:${contentId}`
 }
 
 /** Key for a new item that has not been saved yet. */
-export function createKey(type: string): string {
-  return `new:${type}`
+export function createKey(owner: string, type: string): string {
+  return `${owner}:new:${type}`
+}
+
+/** Removes every draft belonging to a user — used on logout. */
+export async function clearDraftsFor(owner: string): Promise<number> {
+  const store = storage()
+  if (!store) return ok(0)
+  const doomed: string[] = []
+  for (let i = 0; i < store.length; i++) {
+    const k = store.key(i)
+    if (k?.startsWith(`${PREFIX}${owner}:`)) doomed.push(k)
+  }
+  for (const k of doomed) store.removeItem(k)
+  return ok(doomed.length)
 }
 
 function storage(): Storage | null {

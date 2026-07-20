@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import ContentListPage from './ContentListPage'
 import { setCurrentUser, clearCurrentUser } from '../auth'
@@ -38,16 +38,17 @@ describe('ContentListPage section routing', () => {
 describe('ContentListPage guest visibility', () => {
   beforeEach(() => clearCurrentUser())
 
-  it('hides draft content from a guest', () => {
+  it('hides draft content from a guest', async () => {
     renderSection('pkm')
+    await waitFor(() => expect(screen.getByText(/条笔记与文章/)).toBeTruthy())
     // 'private-note-draft' is a draft belonging to euan.
     expect(screen.queryByText('待整理的想法（草稿）')).toBeNull()
   })
 
-  it('shows the same draft to its author', () => {
+  it('shows the same draft to its author', async () => {
     setCurrentUser('euan')
     renderSection('pkm')
-    expect(screen.getByText('待整理的想法（草稿）')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('待整理的想法（草稿）')).toBeTruthy())
   })
 
   it('tells a guest the author has published nothing, per section', () => {

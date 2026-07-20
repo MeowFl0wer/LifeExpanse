@@ -45,11 +45,20 @@ export function useAutosave<T>({
   latest.current = { key, value, dirty, baseUpdatedAt }
 
   const timer = useRef<number | null>(null)
+  // A flush on pagehide can resolve after the component is gone; the write
+  // itself must still happen, but the status update must not.
+  const mounted = useRef(true)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
 
   function write() {
     const { key: k, value: v, dirty: d, baseUpdatedAt: base } = latest.current
     if (!k || !d) return
     void saveDraft(k, v, base).then(() => {
+      if (!mounted.current) return
       setStatus('saved')
       setSavedAt(new Date())
     })
@@ -104,6 +113,7 @@ export function useAutosave<T>({
         timer.current = null
       }
       if (latest.current.key) void clearDraft(latest.current.key)
+      if (!mounted.current) return
       setStatus('idle')
       setSavedAt(null)
     },

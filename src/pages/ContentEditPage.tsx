@@ -108,7 +108,7 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
   }
 
   const autosave = useAutosave({
-    key: item ? editKey(item.id) : null,
+    key: item ? editKey(currentUser ?? '', item.id) : null,
     value: draftValue,
     dirty: isDirty,
     baseUpdatedAt: item?.updatedAt,
@@ -118,7 +118,7 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
   useEffect(() => {
     if (!item || draftChecked) return
     let cancelled = false
-    void loadDraft<EditorDraft>(editKey(item.id)).then(draft => {
+    void loadDraft<EditorDraft>(editKey(currentUser ?? '', item.id)).then(draft => {
       if (cancelled) { return }
       if (draft) {
         const d = draft.data

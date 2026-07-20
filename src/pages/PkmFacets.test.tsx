@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import ContentListPage from './ContentListPage'
@@ -254,23 +254,23 @@ describe('library metadata is not leaked to guests', () => {
     expect(screen.queryByText('还没归类的东西。')).toBeNull()
   })
 
-  it('opens a series that holds public content', () => {
+  it('opens a series that holds public content', async () => {
     renderPkm('/euan/pkm?series=sr1')
-    expect(screen.getByText('LifeExpanse 构建札记')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('LifeExpanse 构建札记')).toBeTruthy())
     expect(screen.getByText('为什么我要自己做一个记录平台')).toBeTruthy()
   })
 
-  it('a drill-in URL restores the library view rather than the All tab', () => {
+  it('a drill-in URL restores the library view rather than the All tab', async () => {
     setCurrentUser('euan')
     renderPkm('/euan/pkm?folder=fd3')
     // Opens the folder itself, not the flat list.
-    expect(screen.getByRole('button', { name: '← 返回文件夹' })).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole('button', { name: '← 返回文件夹' })).toBeTruthy())
     expect(screen.getByText('待整理的想法（草稿）')).toBeTruthy()
   })
 
-  it('still opens a folder that holds public content', () => {
+  it('still opens a folder that holds public content', async () => {
     renderPkm('/euan/pkm?folder=fd1')
-    expect(screen.getAllByText('前端 / React').length).toBeGreaterThan(0)
+    await waitFor(() => expect(screen.getAllByText('前端 / React').length).toBeGreaterThan(0))
   })
 
   it('shows the private folder to its owner', async () => {

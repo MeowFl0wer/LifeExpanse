@@ -61,11 +61,24 @@ export async function listPkm(params: ListParams): Promise<ContentItem[]> {
   return ok(items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()))
 }
 
-export async function getPkmBySlug(slug: string, viewer: string | null): Promise<ContentItem> {
-  const item = allContent.find(c => c.slug === slug)
-  // Same response whether it is missing or hidden, so the reply cannot be used
-  // to probe for the existence of private content.
-  if (!item || !visibleTo(item, viewer)) return fail('内容不存在', 404)
+/**
+ * Looks up one note or article.
+ *
+ * Scoped to the author in the URL and to PKM content: a slug belonging to
+ * someone else, or to a diary entry, must not surface under
+ * /{author}/pkm/{slug}.
+ */
+export async function getPkmBySlug(params: {
+  author: string
+  slug: string
+  viewer: string | null
+}): Promise<ContentItem> {
+  const item = allContent.find(
+    c => c.slug === params.slug && c.type === 'pkm' && c.author === params.author
+  )
+  // Same response whether it is missing, of the wrong type, owned by someone
+  // else, or hidden — so the reply cannot be used to probe for private content.
+  if (!item || !visibleTo(item, params.viewer)) return fail('内容不存在', 404)
   return ok(item)
 }
 
@@ -120,8 +133,26 @@ export async function createPkm(author: string, draft: PkmDraft): Promise<Conten
   return ok(item)
 }
 
-export async function updatePkm(id: string, patch: Partial<PkmDraft>): Promise<ContentItem> {
-  const existing = allContent.find(c => c.id === id)
+/**
+ * Loads an item the actor is allowed to modify.
+ *
+ * Mutations take an `actor` so the rule lives here rather than in each caller:
+ * a page that forgets to check ownership still cannot write to someone else's
+ * content. Not-found and not-yours are the same 404, so the error does not
+ * reveal that the id exists.
+ */
+function ownedByActor(id: string, actor: string): ContentItem | null {
+  const item = allContent.find(c => c.id === id)
+  if (!item || item.type !== 'pkm' || item.author !== actor) return null
+  return item
+}
+
+export async function updatePkm(
+  id: string,
+  actor: string,
+  patch: Partial<PkmDraft>
+): Promise<ContentItem> {
+  const existing = ownedByActor(id, actor)
   if (!existing) return fail('内容不存在', 404)
   if (patch.title !== undefined && !patch.title.trim()) return fail('标题不能为空')
 
@@ -165,11 +196,12 @@ export async function updatePkm(id: string, patch: Partial<PkmDraft>): Promise<C
  */
 export async function publishAsArticle(
   id: string,
+  actor: string,
   extra: { summary?: string; category?: string; allowComments?: boolean } = {}
 ): Promise<ContentItem> {
-  const item = allContent.find(c => c.id === id)
+  const item = ownedByActor(id, actor)
   if (!item) return fail('内容不存在', 404)
-  return updatePkm(id, {
+  return updatePkm(id, actor, {
     contentKind: 'article',
     summary: extra.summary ?? item.summary,
     category: extra.category ?? item.category,
@@ -178,23 +210,22 @@ export async function publishAsArticle(
 }
 
 /** Returns an article to note form. Comments are switched off on the way back. */
-export async function revertToNote(id: string): Promise<ContentItem> {
-  return updatePkm(id, { contentKind: 'note', allowComments: false })
+export async function revertToNote(id: string, actor: string): Promise<ContentItem> {
+  return updatePkm(id, actor, { contentKind: 'note', allowComments: false })
 }
 
-export async function deletePkm(id: string): Promise<void> {
-  const item = allContent.find(c => c.id === id)
-  if (!item) return fail('内容不存在', 404)
+export async function deletePkm(id: string, actor: string): Promise<void> {
+  if (!ownedByActor(id, actor)) return fail('内容不存在', 404)
   deleteContentItem(id)
   return ok(undefined)
 }
 
-export async function toggleFavourite(id: string, value: boolean): Promise<ContentItem> {
-  return updatePkm(id, { favorite: value })
+export async function toggleFavourite(id: string, actor: string, value: boolean): Promise<ContentItem> {
+  return updatePkm(id, actor, { favorite: value })
 }
 
-export async function toggleArchived(id: string, value: boolean): Promise<ContentItem> {
-  return updatePkm(id, { archived: value })
+export async function toggleArchived(id: string, actor: string, value: boolean): Promise<ContentItem> {
+  return updatePkm(id, actor, { archived: value })
 }
 
 /* ---- Links between notes ---- */
@@ -263,7 +294,9 @@ export async function createFolder(owner: string, draft: LibraryDraft): Promise<
   return ok(folder)
 }
 
-export async function saveFolder(id: string, draft: LibraryDraft): Promise<Folder> {
+export async function saveFolder(id: string, actor: string, draft: LibraryDraft): Promise<Folder> {
+  const owned = folderStore.find(f => f.id === id && f.owner === actor)
+  if (!owned) return fail('文件夹不存在', 404)
   if (!draft.name.trim()) return fail('文件夹名称不能为空')
   updateFolder(id, {
     name: draft.name.trim(),
@@ -280,7 +313,8 @@ export async function saveFolder(id: string, draft: LibraryDraft): Promise<Folde
  * Removes a folder. Content is never deleted with it — items are detached and
  * become unfiled, so deleting a container can never destroy what it held.
  */
-export async function removeFolder(id: string): Promise<{ detached: number }> {
+export async function removeFolder(id: string, actor: string): Promise<{ detached: number }> {
+  if (!folderStore.some(f => f.id === id && f.owner === actor)) return fail('文件夹不存在', 404)
   const affected = allContent.filter(c => (c.folderIds ?? []).includes(id))
   for (const item of affected) {
     updateContentItem(item.id, { folderIds: (item.folderIds ?? []).filter(f => f !== id) })
@@ -303,7 +337,9 @@ export async function createSeriesEntry(owner: string, draft: LibraryDraft): Pro
   return ok(entry)
 }
 
-export async function saveSeries(id: string, draft: LibraryDraft): Promise<Series> {
+export async function saveSeries(id: string, actor: string, draft: LibraryDraft): Promise<Series> {
+  const owned = seriesStore.find(s => s.id === id && s.owner === actor)
+  if (!owned) return fail('系列不存在', 404)
   if (!draft.name.trim()) return fail('系列名称不能为空')
   updateSeries(id, {
     name: draft.name.trim(),
@@ -316,7 +352,8 @@ export async function saveSeries(id: string, draft: LibraryDraft): Promise<Serie
 }
 
 /** Removes a series, detaching its folders and any directly filed content. */
-export async function removeSeries(id: string): Promise<{ detachedFolders: number; detachedItems: number }> {
+export async function removeSeries(id: string, actor: string): Promise<{ detachedFolders: number; detachedItems: number }> {
+  if (!seriesStore.some(s => s.id === id && s.owner === actor)) return fail('系列不存在', 404)
   const childFolders = folderStore.filter(f => (f.seriesIds ?? []).includes(id))
   for (const folder of childFolders) {
     updateFolder(folder.id, { seriesIds: (folder.seriesIds ?? []).filter(s => s !== id) })

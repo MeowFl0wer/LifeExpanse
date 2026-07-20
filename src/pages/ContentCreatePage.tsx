@@ -106,7 +106,7 @@ export default function ContentCreatePage() {
 
   const autosave = useAutosave({
     // One draft per content type: starting a second note replaces the first.
-    key: createKey(createType),
+    key: createKey(currentUser ?? '', createType),
     value: draftValue,
     dirty: isDirty,
   })
@@ -115,7 +115,7 @@ export default function ContentCreatePage() {
   useEffect(() => {
     if (draftChecked) return
     let cancelled = false
-    void loadDraft<CreateDraft>(createKey(createType)).then(draft => {
+    void loadDraft<CreateDraft>(createKey(currentUser ?? '', createType)).then(draft => {
       if (cancelled) return
       if (draft) {
         const d = draft.data

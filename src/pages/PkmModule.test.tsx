@@ -62,6 +62,7 @@ describe('publish as article', () => {
     const user = userEvent.setup()
     const note = await makeNote()
     renderDetail(note.slug)
+    await waitFor(() => expect(screen.getByRole('button', { name: /发布为文章/ })).toBeTruthy())
 
     await user.click(screen.getByRole('button', { name: /发布为文章/ }))
 
@@ -73,7 +74,7 @@ describe('publish as article', () => {
   it('offers reverting once it is an article', async () => {
     const article = await makeNote({ contentKind: 'article' })
     renderDetail(article.slug)
-    expect(screen.getByRole('button', { name: /退回笔记/ })).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole('button', { name: /退回笔记/ })).toBeTruthy())
   })
 })
 
@@ -96,6 +97,7 @@ describe('article table of contents', () => {
   it('is not shown for a plain note', async () => {
     const note = await makeNote({ body: '# 标题\n正文' })
     renderDetail(note.slug)
+    await waitFor(() => expect(screen.getAllByText(note.title).length).toBeGreaterThan(0))
     expect(screen.queryByRole('navigation', { name: '文章目录' })).toBeNull()
   })
 })
@@ -200,7 +202,7 @@ describe('library management', () => {
 
     renderList(`/euan/pkm?folder=${folder.id}`)
 
-    expect(screen.getByRole('button', { name: '设置' })).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole('button', { name: '设置' })).toBeTruthy())
     expect(screen.getByRole('button', { name: '删除' })).toBeTruthy()
   })
 
@@ -214,6 +216,7 @@ describe('library management', () => {
     const note = await makeNote({ folderIds: [folder.id] })
 
     renderList(`/euan/pkm?folder=${folder.id}`)
+    await waitFor(() => expect(screen.getByRole('button', { name: '删除' })).toBeTruthy())
     await user.click(screen.getByRole('button', { name: '删除' }))
 
     await waitFor(() => expect(folders.some(f => f.id === folder.id)).toBe(false))
@@ -227,7 +230,7 @@ describe('library management', () => {
 
     renderList(`/euan/pkm?series=${entry.id}`)
 
-    expect(screen.getByRole('button', { name: '设置' })).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole('button', { name: '设置' })).toBeTruthy())
     expect(screen.getByRole('button', { name: '删除' })).toBeTruthy()
   })
 
@@ -239,6 +242,7 @@ describe('library management', () => {
 
     clearCurrentUser()
     renderList(`/euan/pkm?folder=${folder.id}`)
+    await waitFor(() => expect(screen.getAllByText('公开文件夹').length).toBeGreaterThan(0))
 
     expect(screen.queryByRole('button', { name: '设置' })).toBeNull()
     expect(screen.queryByRole('button', { name: '删除' })).toBeNull()
