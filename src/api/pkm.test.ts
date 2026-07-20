@@ -7,7 +7,7 @@ import {
   createSeriesEntry, removeSeries,
 } from './pkm'
 import { ApiError } from './client'
-import { allContent, folders, series, trashedItems } from '../mockData'
+import { allContent, folders, series, trashedItems } from './store'
 
 const createdContent: string[] = []
 const createdFolders: string[] = []

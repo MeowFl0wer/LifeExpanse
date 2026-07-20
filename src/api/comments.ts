@@ -1,7 +1,7 @@
 import { ok, fail } from './client'
 import { usingBackend } from './http'
 import { request } from './http'
-import { articleComments, allContent, nextId } from '../mockData'
+import { articleComments, allContent, nextId } from './store'
 import type { ArticleComment } from '../types'
 
 /**

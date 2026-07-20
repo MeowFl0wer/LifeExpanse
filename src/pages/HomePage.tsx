@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useCurrentUser } from '../auth'
 import PublicHeader from '../components/PublicHeader'
@@ -6,11 +7,12 @@ import ContentCard from '../components/ContentCard'
 import TagList from '../components/TagList'
 import {
   euanProfile,
-  contentOfType,
   trajectoryEntries,
   footprintCities,
   flightRecords,
 } from '../mockData'
+import { listPkm } from '../api/pkm'
+import type { ContentItem } from '../types'
 
 function SectionHeader({ title, to }: { title: string; to: string }) {
   return (
@@ -46,11 +48,27 @@ export default function HomePage() {
   const currentUser = useCurrentUser()
   const heroKey = searchParams.get('hero') ?? '2'
   const heroSrc = heroOptions[heroKey] ?? heroOptions['2']
-  // Derived from the live store so new content appears and deleted content
-  // stops appearing, without this page tracking either.
-  const publicDiary = contentOfType('diary', { author: 'euan', publicOnly: true })
-  const publicPkm = contentOfType('pkm', { author: 'euan', publicOnly: true })
-  const publicThoughts = contentOfType('thought', { author: 'euan', publicOnly: true })
+  // Through the data layer, with `viewer: null` so this shows exactly what a
+  // visitor sees — the page does not decide that for itself.
+  const [publicDiary, setPublicDiary] = useState<ContentItem[]>([])
+  const [publicPkm, setPublicPkm] = useState<ContentItem[]>([])
+  const [publicThoughts, setPublicThoughts] = useState<ContentItem[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all([
+      listPkm({ author: 'euan', viewer: null, type: 'diary' }),
+      listPkm({ author: 'euan', viewer: null, type: 'pkm' }),
+      listPkm({ author: 'euan', viewer: null, type: 'thought' }),
+    ]).then(([diary, pkm, thoughts]) => {
+      if (cancelled) return
+      setPublicDiary(diary)
+      setPublicPkm(pkm)
+      setPublicThoughts(thoughts)
+    })
+    return () => { cancelled = true }
+  }, [])
+
   const publicTotal = publicDiary.length + publicPkm.length + publicThoughts.length
   const totalDistance = flightRecords.reduce((s, f) => s + f.distance, 0).toLocaleString()
 
