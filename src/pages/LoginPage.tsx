@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Logo from '../components/Logo'
 import { setCurrentUser } from '../auth'
-import { login as apiLogin } from '../api/auth'
+import { login as apiLogin, TwoFactorRequired } from '../api/auth'
 import { safeNextPath } from '../lib/redirect'
 
 type LoginState = 'idle' | 'loading' | 'error' | 'success'
@@ -11,6 +11,8 @@ export default function LoginPage() {
   const [credential, setCredential] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(false)
+  const [totpCode, setTotpCode] = useState('')
+  const [needsTotp, setNeedsTotp] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [state, setState] = useState<LoginState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
@@ -55,7 +57,7 @@ export default function LoginPage() {
     setErrorMsg('')
 
     try {
-      const account = await apiLogin(credential, password, remember)
+      const account = await apiLogin(credential, password, remember, totpCode || undefined)
       if (!mounted.current) return
       setCurrentUser(account.username, { remember })
       setState('success')
@@ -66,6 +68,14 @@ export default function LoginPage() {
       }, 600)
     } catch (err) {
       if (!mounted.current) return
+      // Password was right, but the account has 2FA. Ask for the code rather
+      // than reporting a failure — nothing is wrong yet.
+      if (err instanceof TwoFactorRequired) {
+        setNeedsTotp(true)
+        setState(totpCode ? 'error' : 'idle')
+        setErrorMsg(totpCode ? err.message : '')
+        return
+      }
       setState('error')
       setErrorMsg(err instanceof Error ? err.message : '登录失败，请重试。')
     }
@@ -159,6 +169,30 @@ export default function LoginPage() {
                   </div>
                 </div>
 
+                {/* Second factor. Only appears once the server says the password
+                    was right and the account has 2FA on. */}
+                {needsTotp && (
+                  <div>
+                    <label htmlFor="login-totp" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                      两步验证码
+                    </label>
+                    <input
+                      id="login-totp"
+                      value={totpCode}
+                      onChange={e => { setTotpCode(e.target.value); setErrorMsg('') }}
+                      disabled={disabled}
+                      inputMode="text"
+                      autoComplete="one-time-code"
+                      autoFocus
+                      placeholder="验证器 6 位数字，或恢复码"
+                      className="life-input w-full px-3 py-2.5 text-sm tracking-widest disabled:opacity-50"
+                    />
+                    <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">
+                      手机不在身边？用一个恢复码登录，每个只能用一次。
+                    </p>
+                  </div>
+                )}
+
                 {/* Error message */}
                 {state === 'error' && errorMsg && (
                   <div className="rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-xs leading-relaxed text-red-600">
@@ -177,13 +211,12 @@ export default function LoginPage() {
                     />
                     <span className="text-xs text-[color:var(--muted-foreground)]">保持登录</span>
                   </label>
-                  <button
-                    type="button"
-                    className="text-xs text-[color:var(--muted-foreground)] hover:text-[color:var(--primary)] transition-colors"
-                    onClick={() => alert('前端原型：忘记密码功能需要真实后端支持')}
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs text-[color:var(--muted-foreground)] transition-colors hover:text-[color:var(--primary)]"
                   >
                     忘记密码？
-                  </button>
+                  </Link>
                 </div>
 
                 <button

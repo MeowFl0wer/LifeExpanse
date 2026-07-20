@@ -51,6 +51,14 @@ def store_secret(user: User, secret: str) -> None:
     user.totp_secret_enc = encrypt(secret)
 
 
+def clear_recovery_codes(db: Session, user: User) -> None:
+    """Removes every recovery code. Used when 2FA is switched off — leaving
+    them behind would keep a second way in for a factor that no longer exists."""
+    for row in db.scalars(select(RecoveryCode).where(RecoveryCode.user_id == user.id)).all():
+        db.delete(row)
+    db.commit()
+
+
 def generate_recovery_codes(db: Session, user: User) -> list[str]:
     """Issues a fresh set, replacing any that already exist.
 

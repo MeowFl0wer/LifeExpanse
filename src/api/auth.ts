@@ -23,10 +23,24 @@ interface WireUser {
 const MOCK_USER = 'euan'
 const MOCK_PASSWORD = 'demo123456'
 
+/**
+ * Thrown when the password was right but a second factor is still needed.
+ *
+ * A distinct type rather than a flag, so a caller cannot accidentally treat
+ * "needs 2FA" as a successful sign-in.
+ */
+export class TwoFactorRequired extends Error {
+  constructor(message = '需要两步验证码') {
+    super(message)
+    this.name = 'TwoFactorRequired'
+  }
+}
+
 export async function login(
   credential: string,
   password: string,
-  remember: boolean
+  remember: boolean,
+  totpCode?: string
 ): Promise<AccountInfo> {
   if (!usingBackend()) {
     if ((credential === MOCK_USER || credential === 'euan@example.com') && password === MOCK_PASSWORD) {
@@ -34,11 +48,20 @@ export async function login(
     }
     throw new Error('用户名或密码不正确')
   }
-  const user = await request<WireUser>('/auth/login', {
-    method: 'POST',
-    body: { credential, password, remember },
-  })
-  return { username: user.username, displayName: user.display_name }
+  try {
+    const user = await request<WireUser>('/auth/login', {
+      method: 'POST',
+      body: { credential, password, remember, totp_code: totpCode ?? null },
+    })
+    return { username: user.username, displayName: user.display_name }
+  } catch (err) {
+    // The server answers 401 with this message when the password checked out
+    // but the account has 2FA on.
+    if (err instanceof Error && err.message.includes('两步验证码')) {
+      throw new TwoFactorRequired(err.message)
+    }
+    throw err
+  }
 }
 
 export async function logout(): Promise<void> {

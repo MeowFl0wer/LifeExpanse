@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .bootstrap import ensure_admin
 from .config import get_settings
 from .db import Base, SessionLocal, engine
-from .routers import auth, comments, content, drafts, library, trash
+from .routers import auth, comments, content, drafts, library, trash, twofactor
 
 settings = get_settings()
 
@@ -43,6 +43,7 @@ app.include_router(comments.router)
 app.include_router(library.router)
 app.include_router(trash.router)
 app.include_router(drafts.router)
+app.include_router(twofactor.router)
 
 
 @app.get("/api/v1/health")

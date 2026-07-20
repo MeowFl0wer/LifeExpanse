@@ -90,6 +90,9 @@ class LoginIn(BaseModel):
     credential: str
     password: str
     remember: bool = False
+    # Supplied on the second attempt, once the server has said 2FA is needed.
+    # Accepts an authenticator code or an unused recovery code.
+    totp_code: str | None = None
 
 
 class TagOut(BaseModel):
@@ -239,3 +242,30 @@ class CommentOut(BaseModel):
     author_display_name: str
     body: str
     created_at: datetime
+
+
+class TotpSetupOut(BaseModel):
+    """Everything needed to add the account to an authenticator."""
+
+    secret: str
+    otpauth_uri: str
+
+
+class TotpEnableIn(BaseModel):
+    # Proves the authenticator is actually set up before it becomes required.
+    code: str = Field(min_length=6, max_length=10)
+
+
+class TotpDisableIn(BaseModel):
+    current_password: str
+    email_code: str | None = None
+    totp_code: str | None = None
+
+
+class RecoveryCodesOut(BaseModel):
+    codes: list[str]
+
+
+class TotpStatusOut(BaseModel):
+    enabled: bool
+    recovery_codes_left: int
