@@ -114,6 +114,7 @@ async def upload(
     digest = storage.save(media_id, sniffed.mime, data)
     # Display uses this; the original is only fetched when a reader asks to
     # see or download it. Small images get none — there would be nothing saved.
+    # Videos get a poster frame, so a page of clips is not a page of grey boxes.
     has_thumb = storage.make_thumbnail(media_id, sniffed.mime, data)
 
     media = MediaFile(

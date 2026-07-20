@@ -1,6 +1,7 @@
 """Uploads: permissions, type checking, quota, and who may read a file back."""
 
 import io
+import os
 
 from tests.conftest import current_session, login, register
 
@@ -486,3 +487,134 @@ def test_deleting_removes_the_thumbnail_too(client):
 
     client.delete(f"/api/v1/media/{media_id}")
     assert not thumb.is_file()
+
+
+# --------------------------------------------------------------------------
+# Video posters
+# --------------------------------------------------------------------------
+
+def make_video(seconds: float = 3, colour: str = "green") -> bytes:
+    """A real, decodable MP4. Sniffing and ffmpeg both look at the actual bytes,
+    so a fake header would not exercise either."""
+    import subprocess
+    import tempfile
+
+    import imageio_ffmpeg
+
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as handle:
+        path = handle.name
+    subprocess.run(
+        [
+            imageio_ffmpeg.get_ffmpeg_exe(), "-loglevel", "error",
+            "-f", "lavfi", "-i", f"color=c={colour}:s=640x480:d={seconds}",
+            "-pix_fmt", "yuv420p", "-y", path,
+        ],
+        check=True, capture_output=True, timeout=60,
+    )
+    data = open(path, "rb").read()
+    os.unlink(path)
+    return data
+
+
+def test_a_video_gets_a_poster_frame(client):
+    register(client, "euan")
+    login(client, "euan")
+    grant("euan", video=True)
+
+    body = upload(client, make_video(), name="clip.mp4", ctype="video/mp4").json()
+    assert body["kind"] == "video"
+    # Without one, a page of clips is a page of grey rectangles.
+    assert body["has_thumbnail"] is True
+    assert body["thumbnail_url"].endswith("?variant=thumb")
+
+
+def test_the_poster_is_an_image_not_the_video(client):
+    register(client, "euan")
+    login(client, "euan")
+    grant("euan", video=True)
+    media_id = upload(client, make_video(), name="clip.mp4", ctype="video/mp4").json()["id"]
+
+    poster = client.get(f"/api/v1/media/{media_id}", params={"variant": "thumb"})
+    assert poster.status_code == 200
+    assert poster.headers["Content-Type"] == "image/webp"
+    # And the original is still the video.
+    original = client.get(f"/api/v1/media/{media_id}")
+    assert original.headers["Content-Type"] == "video/mp4"
+    assert len(poster.content) < len(original.content)
+
+
+def test_a_very_short_clip_still_gets_a_poster(client):
+    """The first attempt seeks to one second; a shorter clip has no frame there."""
+    register(client, "euan")
+    login(client, "euan")
+    grant("euan", video=True)
+
+    body = upload(client, make_video(seconds=0.3), name="tiny.mp4", ctype="video/mp4").json()
+    assert body["has_thumbnail"] is True
+
+
+def test_deleting_a_video_removes_its_poster(client):
+    from app import storage
+
+    register(client, "euan")
+    login(client, "euan")
+    grant("euan", video=True)
+    media_id = upload(client, make_video(), name="clip.mp4", ctype="video/mp4").json()["id"]
+    poster = storage.thumb_path_for(media_id, "video/mp4")
+    assert poster.is_file()
+
+    client.delete(f"/api/v1/media/{media_id}")
+    assert not poster.is_file()
+
+
+def test_a_poster_obeys_the_same_permissions_as_the_video(client):
+    register(client, "euan")
+    login(client, "euan")
+    grant("euan", video=True)
+    media_id = upload(client, make_video(), name="clip.mp4", ctype="video/mp4").json()["id"]
+    client.post("/api/v1/auth/logout")
+
+    assert client.get(f"/api/v1/media/{media_id}", params={"variant": "thumb"}).status_code == 404
+
+
+# --------------------------------------------------------------------------
+# Animated images
+# --------------------------------------------------------------------------
+
+def animated_gif(width=1200, height=900, frames=4) -> bytes:
+    from PIL import Image
+
+    palette = [(220, 60, 60), (60, 200, 90), (60, 120, 220), (230, 190, 60)]
+    images = [
+        Image.new("RGB", (width, height), palette[i % len(palette)]).convert("P")
+        for i in range(frames)
+    ]
+    buf = io.BytesIO()
+    images[0].save(
+        buf, "GIF", save_all=True, append_images=images[1:], duration=120, loop=0
+    )
+    return buf.getvalue()
+
+
+def test_an_animated_gif_keeps_its_animation_in_the_thumbnail(client):
+    """A still first frame would make every animation look broken until clicked."""
+    from PIL import Image
+
+    register(client, "euan")
+    login(client, "euan")
+    media_id = upload(client, animated_gif(), name="a.gif", ctype="image/gif").json()["id"]
+
+    thumb = client.get(f"/api/v1/media/{media_id}", params={"variant": "thumb"})
+    with Image.open(io.BytesIO(thumb.content)) as img:
+        assert img.format == "WEBP"
+        assert getattr(img, "n_frames", 1) > 1
+
+
+def test_a_small_animated_gif_still_gets_a_thumbnail(client):
+    """Size is not the only reason: a GIF needs converting to animated WebP
+    even when its dimensions are already small."""
+    register(client, "euan")
+    login(client, "euan")
+
+    body = upload(client, animated_gif(80, 60), name="a.gif", ctype="image/gif").json()
+    assert body["has_thumbnail"] is True

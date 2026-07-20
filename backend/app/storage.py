@@ -114,9 +114,14 @@ def make_thumbnail(media_id: str, mime: str, data: bytes) -> bool:
     asks to see or download it. A page of ten photos should not pull ten
     full-size files.
 
-    Failure is not fatal — an image that Pillow cannot read is still a valid
-    upload, it just gets shown at full size.
+    Videos get a poster frame instead, which is the closest equivalent — see
+    `make_video_poster`.
+
+    Failure is not fatal — a file this cannot read is still a valid upload, it
+    just gets shown at full size.
     """
+    if mime.startswith("video/"):
+        return make_video_poster(media_id, mime, data)
     if not mime.startswith("image/"):
         return False
 
@@ -132,21 +137,123 @@ def make_thumbnail(media_id: str, mime: str, data: bytes) -> bool:
         import io
 
         with Image.open(io.BytesIO(data)) as img:
-            if img.width <= edge and img.height <= edge:
+            frames = getattr(img, "n_frames", 1)
+            if img.width <= edge and img.height <= edge and frames == 1:
                 # Already small enough; a "thumbnail" would be no smaller.
                 return False
 
-            # Animated GIFs lose their animation when thumbnailed, so the
-            # still first frame is what gets shown until it is clicked.
-            img = img.convert("RGB") if img.mode in ("P", "RGBA", "LA") else img
-            img.thumbnail((edge, edge), Image.LANCZOS)
-
             target = thumb_path_for(media_id, mime)
             target.parent.mkdir(parents=True, exist_ok=True)
-            img.save(target, "WEBP", quality=82, method=4)
+
+            if frames > 1:
+                return _save_animated_thumbnail(img, target, edge)
+
+            flat = img.convert("RGB") if img.mode in ("P", "RGBA", "LA") else img
+            flat.thumbnail((edge, edge), Image.LANCZOS)
+            flat.save(target, "WEBP", quality=82, method=4)
             return True
     except Exception:
         return False
+
+
+def _save_animated_thumbnail(img, target: Path, edge: int) -> bool:
+    """Keeps an animated GIF animated.
+
+    A still first frame would make every animation look broken until it was
+    clicked, which is worse than showing it small.
+    """
+    from PIL import Image, ImageSequence
+
+    frames = []
+    durations = []
+    for frame in ImageSequence.Iterator(img):
+        copy = frame.convert("RGBA")
+        copy.thumbnail((edge, edge), Image.LANCZOS)
+        frames.append(copy)
+        durations.append(frame.info.get("duration", 100))
+
+    if not frames:
+        return False
+
+    frames[0].save(
+        target, "WEBP", save_all=True, append_images=frames[1:],
+        duration=durations, loop=img.info.get("loop", 0), quality=75, method=4,
+    )
+    return True
+
+
+def make_video_poster(media_id: str, mime: str, data: bytes) -> bool:
+    """Extracts a frame from a video to stand in for it.
+
+    Without one, a page of videos is a page of grey rectangles. The frame is
+    taken a second in rather than at zero: many videos open on black.
+
+    ffmpeg comes from `imageio-ffmpeg`, which ships a static binary as a pip
+    package. Using the system ffmpeg would mean a deployment could be missing
+    it and nobody would find out until somebody uploaded a video.
+
+    Never fatal: no poster just means the video shows without one.
+    """
+    settings = get_settings()
+
+    try:
+        import imageio_ffmpeg
+    except ImportError:  # pragma: no cover
+        return False
+
+    import subprocess
+    import tempfile
+
+    source = path_for(media_id, mime)
+    if not source.is_file():
+        # Called before the bytes were written; fall back to a temp copy.
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as handle:
+            handle.write(data)
+            source = Path(handle.name)
+        temporary = True
+    else:
+        temporary = False
+
+    target = thumb_path_for(media_id, mime)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        result = subprocess.run(
+            [
+                imageio_ffmpeg.get_ffmpeg_exe(),
+                "-loglevel", "error",
+                # Seeking before -i is the fast path; -noaccurate_seek keeps it
+                # cheap on a keyframe boundary, which is fine for a poster.
+                "-ss", "1", "-i", str(source),
+                "-frames:v", "1",
+                "-vf", f"scale='min({settings.thumbnail_max_edge},iw)':-2",
+                "-f", "webp", "-y", str(target),
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+        if result.returncode != 0 or not target.is_file():
+            # A clip shorter than a second has no frame at 1s; retry from the start.
+            result = subprocess.run(
+                [
+                    imageio_ffmpeg.get_ffmpeg_exe(),
+                    "-loglevel", "error",
+                    "-i", str(source), "-frames:v", "1",
+                    "-vf", f"scale='min({settings.thumbnail_max_edge},iw)':-2",
+                    "-f", "webp", "-y", str(target),
+                ],
+                capture_output=True,
+                timeout=30,
+            )
+        return target.is_file() and target.stat().st_size > 0
+    except (subprocess.SubprocessError, OSError):
+        return False
+    finally:
+        if temporary:
+            try:
+                source.unlink()
+            except OSError:
+                pass
 
 
 def load_thumbnail(media_id: str, mime: str) -> bytes | None:
