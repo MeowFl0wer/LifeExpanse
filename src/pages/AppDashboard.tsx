@@ -4,6 +4,7 @@ import AppHeader from '../components/AppHeader'
 import ContentCard from '../components/ContentCard'
 import { flightRecords, footprintCities, generateHeatmapData } from '../mockData'
 import { countByType, recentVisible } from '../api/pkm'
+import { SITE_OWNER } from '../lib/site'
 import { listTrash } from '../api/trash'
 import type { ContentItem } from '../types'
 import { useCurrentUser } from '../auth'
@@ -45,7 +46,7 @@ function SectionTitle({ title, desc }: { title: string; desc?: string }) {
 }
 
 export default function AppDashboard() {
-  const currentUser = useCurrentUser() ?? 'euan'
+  const currentUser = useCurrentUser() ?? SITE_OWNER
 
   // Through the data layer, so the permission rule is applied once and
   // server-side content is counted too.

@@ -5,6 +5,7 @@ import Footer from '../components/Footer'
 import RunningClock from '../components/RunningClock'
 import { siteStats } from '../mockData'
 import { countPublic } from '../api/pkm'
+import { SITE_OWNER } from '../lib/site'
 
 const APP_VERSION = 'v0.1.0'
 
@@ -52,7 +53,7 @@ export default function AboutPage() {
   const [publicCount, setPublicCount] = useState(0)
   useEffect(() => {
     let cancelled = false
-    countPublic('euan')
+    countPublic(SITE_OWNER)
       .then(n => { if (!cancelled) setPublicCount(n) })
       .catch(() => { if (!cancelled) setPublicCount(0) })
     return () => { cancelled = true }

@@ -12,6 +12,7 @@ import {
   flightRecords,
 } from '../mockData'
 import { listPkm } from '../api/pkm'
+import { SITE_OWNER } from '../lib/site'
 import type { ContentItem } from '../types'
 
 function SectionHeader({ title, to }: { title: string; to: string }) {
@@ -57,9 +58,9 @@ export default function HomePage() {
   useEffect(() => {
     let cancelled = false
     void Promise.all([
-      listPkm({ author: 'euan', viewer: null, type: 'diary' }),
-      listPkm({ author: 'euan', viewer: null, type: 'pkm' }),
-      listPkm({ author: 'euan', viewer: null, type: 'thought' }),
+      listPkm({ author: SITE_OWNER, viewer: null, type: 'diary' }),
+      listPkm({ author: SITE_OWNER, viewer: null, type: 'pkm' }),
+      listPkm({ author: SITE_OWNER, viewer: null, type: 'thought' }),
     ]).then(([diary, pkm, thoughts]) => {
       if (cancelled) return
       setPublicDiary(diary)

@@ -15,6 +15,7 @@ import {
   createPkm, createFolder, createSeriesEntry, saveFolder, saveSeries,
 } from '../api/pkm'
 import { loginUrlFor } from '../lib/redirect'
+import { SITE_OWNER } from '../lib/site'
 import { useAutosave } from '../hooks/useAutosave'
 import { loadDraft, createKey } from '../api/drafts'
 import AutosaveIndicator from '../components/AutosaveStatus'
@@ -239,7 +240,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     // Through the data layer like every other write. Writing to the store here
     // meant a quick thought vanished on reload once a backend was configured.
     try {
-      await createPkm(currentUser ?? username ?? 'euan', {
+      await createPkm(currentUser ?? username ?? SITE_OWNER, {
         type: 'thought',
         title: text,
         body: quickThoughtType === 'excerpt'

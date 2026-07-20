@@ -78,3 +78,27 @@ describe('the content store is reachable only from the data layer', () => {
     }
   })
 })
+
+/**
+ * The site owner is named once.
+ *
+ * Scattered `'euan'` literals in data-layer calls defeat the point of having
+ * the constant: the day this stops being a one-person site, the compiler would
+ * not help find them.
+ */
+describe('the site owner is a constant, not a literal', () => {
+  it('no page passes a hard-coded author to the data layer', () => {
+    const offenders: string[] = []
+    for (const file of [...sourceFiles('src/pages'), ...sourceFiles('src/components')]) {
+      const text = readFileSync(file, 'utf8')
+      for (const line of text.split('\n')) {
+        // Route strings like `/euan/pkm` are a separate concern; this is about
+        // values handed to the data layer as an author.
+        if (/'euan'/.test(line) && !/to=|href=|'\/euan/.test(line)) {
+          offenders.push(`${file}: ${line.trim()}`)
+        }
+      }
+    }
+    expect(offenders, `use SITE_OWNER instead:\n${offenders.join('\n')}`).toEqual([])
+  })
+})
