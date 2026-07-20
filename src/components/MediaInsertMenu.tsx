@@ -102,8 +102,8 @@ export default function MediaInsertMenu({
       setError(`视频不能超过 ${formatBytes(quota.maxVideoBytes)}（当前 ${formatBytes(file.size)}）`)
       return
     }
-    void upload(file, url =>
-      `<video src="${url}" poster="${url}?variant=thumb" controls preload="metadata" style="max-width:100%"></video>`)
+    // The renderer builds the element; the body never contains raw HTML.
+    void upload(file, url => `@[video](${url})`)
   }
 
   function handleInsertLink() {

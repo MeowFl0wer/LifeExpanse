@@ -288,3 +288,14 @@ class RemoveBackupEmailIn(BaseModel):
     current_password: str
     email_code: str | None = None
     totp_code: str | None = None
+
+
+class ProfileIn(BaseModel):
+    """What a user may change about themselves.
+
+    The username is absent on purpose: it is the address of their public pages
+    and does not change. The display name does, and must stay unique.
+    """
+
+    display_name: str = Field(min_length=1, max_length=60)
+    bio: str = Field(default="", max_length=500)

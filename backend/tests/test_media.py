@@ -26,6 +26,18 @@ def upload(client, data: bytes, name="a.png", ctype="image/png", **params):
     )
 
 
+def thumbnail_state(client, media_id: str) -> dict:
+    """Reads a file's thumbnail state back.
+
+    The upload response cannot report it: generation happens after the response
+    goes out. TestClient runs background tasks before returning, so by the time
+    this is called the work is done — but the upload body was serialised first
+    and still says `pending`.
+    """
+    rows = client.get("/api/v1/media").json()
+    return next(r for r in rows if r["id"] == media_id)
+
+
 def grant(username: str, *, image=None, video=None) -> None:
     from app.models import User
 
@@ -393,8 +405,13 @@ def test_a_large_image_gets_a_thumbnail(client):
     login(client, "euan")
 
     body = upload(client, big_png()).json()
-    assert body["has_thumbnail"] is True
-    assert body["thumbnail_url"].endswith("?variant=thumb")
+    # Not yet — and saying so is the point of the state field.
+    assert body["thumbnail_state"] == "pending"
+
+    row = thumbnail_state(client, body["id"])
+    assert row["has_thumbnail"] is True
+    assert row["thumbnail_state"] == "ready"
+    assert row["thumbnail_url"].endswith("?variant=thumb")
 
 
 def test_the_thumbnail_is_much_smaller_than_the_original(client):
@@ -429,9 +446,12 @@ def test_a_small_image_gets_no_thumbnail(client):
     register(client, "euan")
     login(client, "euan")
 
-    body = upload(client, big_png(80, 60)).json()
-    assert body["has_thumbnail"] is False
-    assert body["thumbnail_url"] == ""
+    row = thumbnail_state(client, upload(client, big_png(80, 60)).json()["id"])
+    assert row["has_thumbnail"] is False
+    assert row["thumbnail_url"] == ""
+    # "skipped", not "failed": there is nothing to gain, so retrying on every
+    # startup would be pointless work.
+    assert row["thumbnail_state"] == "skipped"
 
 
 def test_asking_for_a_thumbnail_that_does_not_exist_returns_the_original(client):
@@ -523,9 +543,11 @@ def test_a_video_gets_a_poster_frame(client):
 
     body = upload(client, make_video(), name="clip.mp4", ctype="video/mp4").json()
     assert body["kind"] == "video"
+
+    row = thumbnail_state(client, body["id"])
     # Without one, a page of clips is a page of grey rectangles.
-    assert body["has_thumbnail"] is True
-    assert body["thumbnail_url"].endswith("?variant=thumb")
+    assert row["has_thumbnail"] is True
+    assert row["thumbnail_url"].endswith("?variant=thumb")
 
 
 def test_the_poster_is_an_image_not_the_video(client):
@@ -550,7 +572,7 @@ def test_a_very_short_clip_still_gets_a_poster(client):
     grant("euan", video=True)
 
     body = upload(client, make_video(seconds=0.3), name="tiny.mp4", ctype="video/mp4").json()
-    assert body["has_thumbnail"] is True
+    assert thumbnail_state(client, body["id"])["has_thumbnail"] is True
 
 
 def test_deleting_a_video_removes_its_poster(client):
@@ -617,4 +639,107 @@ def test_a_small_animated_gif_still_gets_a_thumbnail(client):
     login(client, "euan")
 
     body = upload(client, animated_gif(80, 60), name="a.gif", ctype="image/gif").json()
-    assert body["has_thumbnail"] is True
+    assert thumbnail_state(client, body["id"])["has_thumbnail"] is True
+
+
+# --------------------------------------------------------------------------
+# Generation is off the request path — and survives the process dying
+# --------------------------------------------------------------------------
+
+def test_the_upload_response_does_not_wait_for_the_thumbnail(client):
+    """Decoding a large video takes seconds; the uploader has not asked to see
+    a picture yet, so they should not wait for one."""
+    register(client, "euan")
+    login(client, "euan")
+
+    body = upload(client, big_png()).json()
+    assert body["thumbnail_state"] == "pending"
+    assert body["has_thumbnail"] is False
+
+
+def test_display_falls_back_to_the_original_while_pending(client):
+    """The page is correct throughout, just not as cheap for a moment."""
+    from app.models import MediaFile
+
+    register(client, "euan")
+    login(client, "euan")
+    media_id = upload(client, big_png()).json()["id"]
+
+    # Put it back to how it looked before the background task ran.
+    with current_session() as db:
+        m = db.get(MediaFile, media_id)
+        m.has_thumbnail = False
+        m.thumbnail_state = "pending"
+        db.commit()
+
+    res = client.get(f"/api/v1/media/{media_id}", params={"variant": "thumb"})
+    assert res.status_code == 200
+    assert res.headers["Content-Type"] == "image/png"
+
+
+def test_the_startup_pass_picks_up_anything_left_pending(client):
+    """A crash between the response and the task must not leave a thumbnail
+    missing forever."""
+    from app import storage, thumbnails
+    from app.models import MediaFile
+
+    register(client, "euan")
+    login(client, "euan")
+    media_id = upload(client, big_png()).json()["id"]
+
+    # Simulate the process dying before the task ran.
+    storage.thumb_path_for(media_id, "image/png").unlink()
+    with current_session() as db:
+        m = db.get(MediaFile, media_id)
+        m.has_thumbnail = False
+        m.thumbnail_state = "pending"
+        db.commit()
+
+    assert thumbnails.backfill() == 1
+    assert thumbnail_state(client, media_id)["has_thumbnail"] is True
+
+
+def test_the_startup_pass_retries_a_failure(client):
+    from app import thumbnails
+    from app.models import MediaFile
+
+    register(client, "euan")
+    login(client, "euan")
+    media_id = upload(client, big_png()).json()["id"]
+    with current_session() as db:
+        db.get(MediaFile, media_id).thumbnail_state = "failed"
+        db.commit()
+
+    assert thumbnails.backfill() == 1
+
+
+def test_the_startup_pass_leaves_finished_work_alone(client):
+    """A skipped file must not be retried on every boot forever."""
+    from app import thumbnails
+
+    register(client, "euan")
+    login(client, "euan")
+    upload(client, big_png())          # -> ready
+    upload(client, big_png(80, 60))    # -> skipped
+
+    assert thumbnails.backfill() == 0
+
+
+def test_a_deleted_file_is_not_processed(client):
+    """The sweep must not resurrect bytes the user asked to be removed."""
+    from app import storage, thumbnails
+    from app.models import MediaFile
+
+    register(client, "euan")
+    login(client, "euan")
+    media_id = upload(client, big_png()).json()["id"]
+    client.delete(f"/api/v1/media/{media_id}")
+
+    with current_session() as db:
+        db.get(MediaFile, media_id).thumbnail_state = "pending"
+        db.commit()
+
+    assert thumbnails.backfill() == 0
+    # And nothing was written back to disk.
+    assert not storage.thumb_path_for(media_id, "image/png").is_file()
+    assert not storage.path_for(media_id, "image/png").is_file()

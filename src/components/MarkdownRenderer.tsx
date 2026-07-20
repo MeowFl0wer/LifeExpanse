@@ -31,7 +31,15 @@ function parseMarkdown(
   md: string,
   resolveLink?: (target: string) => WikiLinkTarget | undefined
 ): string {
-  let html = md
+  // Everything is escaped before any rule runs, so the only HTML in the output
+  // is HTML this function produced. A body is Markdown, not a document — and
+  // a public article is read by other people, so raw HTML here would mean one
+  // author could run script in every reader's browser.
+  //
+  // `<script>` inserted via innerHTML is inert, but `<img onerror>` is not,
+  // and `<iframe>` loads. Escaping up front closes the whole category rather
+  // than the examples anyone happened to think of.
+  let html = escapeHtml(md)
 
   // Wiki links run before other inline rules so their contents are not
   // mangled by emphasis or link parsing.
@@ -40,6 +48,8 @@ function parseMarkdown(
       const resolved = resolveLink(link.target)
       // `[[slug]]` shows the target note's title; an explicit `[[x|别名]]` wins.
       const hasAlias = link.display !== link.target
+      // The label and href come from the caller (a note title, a route), not
+      // from the already-escaped body, so these still need escaping.
       const label = escapeHtml(hasAlias ? link.display : resolved?.label ?? link.display)
       const replacement = resolved?.href
         ? `<a class="wikilink" href="${escapeHtml(resolved.href)}">${label}</a>`
@@ -50,12 +60,13 @@ function parseMarkdown(
 
   // Code blocks (must come before inline code)
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-    const escaped = escapeHtml(code.trim())
-    return `<pre><code class="language-${lang || 'text'}">${escaped}</code></pre>`
+    // Already escaped by the pass at the top; escaping again would display
+    // `&lt;script&gt;` where the author wrote `<script>`.
+    return `<pre><code class="language-${lang || 'text'}">${code.trim()}</code></pre>`
   })
 
   // Inline code
-  html = html.replace(/`([^`]+)`/g, (_m, code) => `<code>${escapeHtml(code)}</code>`)
+  html = html.replace(/`([^`]+)`/g, (_m, code) => `<code>${code}</code>`)
 
   // Headings, with anchors so the table of contents can scroll to them.
   const usedIds = new Map<string, number>()
@@ -86,18 +97,26 @@ function parseMarkdown(
   // The two controls sit in the bottom-right corner and appear on hover. On a
   // touch screen there is no hover, so they stay visible: a control nobody can
   // reach is not subtle design, it is a missing feature.
+  // `@[video](url)` — the editor's own syntax, so inserting a video never
+  // requires putting HTML in the body.
+  html = html.replace(/@\[video\]\(([^)\s]+)\)/g, (_full, src: string) => {
+    const poster = isManagedMedia(src) ? ` poster="${thumbnailUrl(src)}"` : ''
+    return (
+      `<video src="${src}"${poster} controls preload="metadata" ` +
+      `class="life-video"></video>`
+    )
+  })
+
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_full, alt: string, src: string) => {
-    const safeSrc = escapeHtml(src)
-    const safeAlt = escapeHtml(alt)
     if (!isManagedMedia(src)) {
-      return `<img src="${safeSrc}" alt="${safeAlt}" />`
+      return `<img src="${src}" alt="${alt}" />`
     }
     return (
       `<span class="life-figure">` +
-      `<img src="${escapeHtml(thumbnailUrl(src))}" alt="${safeAlt}" loading="lazy" />` +
+      `<img src="${thumbnailUrl(src)}" alt="${alt}" loading="lazy" />` +
       `<span class="life-figure-actions">` +
-      `<a href="${safeSrc}" target="_blank" rel="noopener noreferrer">查看原图</a>` +
-      `<a href="${escapeHtml(downloadUrl(src))}" download>下载</a>` +
+      `<a href="${src}" target="_blank" rel="noopener noreferrer">查看原图</a>` +
+      `<a href="${downloadUrl(src)}" download>下载</a>` +
       `</span></span>`
     )
   })
@@ -126,7 +145,7 @@ function parseMarkdown(
   for (const line of lines) {
     const trimmed = line.trim()
     if (!trimmed) continue
-    if (/^<(h[1-6]|p|ul|ol|li|blockquote|pre|hr|img|div|span class="life-figure")/.test(trimmed)) {
+    if (/^<(h[1-6]|p|ul|ol|li|blockquote|pre|hr|img|div|video|span class="life-figure")/.test(trimmed)) {
       result.push(trimmed)
     } else {
       result.push(`<p>${trimmed}</p>`)

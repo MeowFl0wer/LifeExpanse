@@ -53,7 +53,10 @@ class User(Base):
     backup_email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     backup_email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    display_name: Mapped[str] = mapped_column(String(60), default="")
+    # Unique like the username. The username is the address and never changes;
+    # the display name is what people read, and two identical ones would make
+    # comments and mentions ambiguous.
+    display_name: Mapped[str] = mapped_column(String(60), default="", unique=True)
     bio: Mapped[str] = mapped_column(Text, default="")
     # Argon2id via passlib; the plain password is never stored or logged.
     password_hash: Mapped[str] = mapped_column(String(255))
@@ -180,8 +183,15 @@ class MediaFile(Base):
     # can be undone within the retention window instead of vanishing at once.
     orphaned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
-    # Whether a thumbnail was generated. Videos and tiny images have none.
+    # Set once a thumbnail exists. Generation happens after the response, so
+    # this is false for a moment even on files that will get one.
+    # `thumbnail_state` says which case a false means.
     has_thumbnail: Mapped[bool] = mapped_column(Boolean, default=False)
+    # pending | ready | skipped | failed
+    #   pending — queued, not made yet (display falls back to the original)
+    #   skipped — deliberately none, e.g. an image already smaller than the edge
+    #   failed  — tried and could not; retried on the next startup pass
+    thumbnail_state: Mapped[str] = mapped_column(String(16), default="pending", index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)

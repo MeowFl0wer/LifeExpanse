@@ -366,3 +366,33 @@ export async function currentBackupEmail(): Promise<string> {
   }
   return mockBackup
 }
+
+/* ---------------- profile ---------------- */
+
+let mockDisplayName = 'Euan'
+
+/**
+ * Changes the display name and bio.
+ *
+ * There is no username parameter, and that is the point: `/{username}` is the
+ * address of everything a person has published. Changing it would break every
+ * link anyone saved, and freeing the old one would let somebody else inherit
+ * that audience.
+ */
+export async function updateProfile(displayName: string, bio: string): Promise<void> {
+  if (usingBackend()) {
+    await request<void>('/auth/profile', {
+      method: 'PATCH',
+      body: { display_name: displayName, bio },
+    })
+    return
+  }
+  if (displayName.trim().toLowerCase() === 'alice') {
+    throw new ApiError('该昵称已被使用', 409)
+  }
+  mockDisplayName = displayName.trim()
+}
+
+export function currentDisplayName(): string {
+  return mockDisplayName
+}

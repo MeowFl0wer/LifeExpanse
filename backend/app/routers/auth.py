@@ -9,7 +9,7 @@ from ..db import get_db
 from ..models import AuditLog, SessionToken, User, utcnow
 from ..schemas import (
     ChangeEmailIn, ChangePasswordIn, EmailOnlyIn, LoginIn, MeOut, RegisterIn,
-    RemoveBackupEmailIn, ResetPasswordIn, SetBackupEmailIn, UserOut,
+    ProfileIn, RemoveBackupEmailIn, ResetPasswordIn, SetBackupEmailIn, UserOut,
 )
 from ..security import (
     SESSION_COOKIE, create_session, current_user, hash_password, revoke_session, verify_password,
@@ -216,6 +216,51 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=MeOut)
 def me(user: User = Depends(current_user)):
+    return user
+
+
+@router.patch("/profile", response_model=MeOut)
+def update_profile(
+    payload: ProfileIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Changes the display name and bio.
+
+    Not the username. `/{username}` is the address of everything this person
+    has published; changing it would break every link anyone ever saved, and
+    freeing the old one would let somebody else inherit that audience.
+    """
+    display_name = payload.display_name.strip()
+    if not display_name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "昵称不能为空")
+
+    # Case-insensitive: "Euan" and "euan" reading as different people would
+    # defeat the point of the rule.
+    clash = db.scalar(
+        select(User).where(
+            func.lower(User.display_name) == display_name.lower(),
+            User.id != user.id,
+        )
+    )
+    if clash is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "该昵称已被使用")
+
+    # A display name that looks like somebody else's username invites
+    # impersonation in comments, where both appear as plain text.
+    impersonation = db.scalar(
+        select(User).where(
+            func.lower(User.username) == display_name.lower(), User.id != user.id
+        )
+    )
+    if impersonation is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "该昵称与其他用户的用户名相同")
+
+    user.display_name = display_name
+    user.bio = payload.bio.strip()
+    db.add(AuditLog(actor=user.username, event="profile_updated"))
+    db.commit()
+    db.refresh(user)
     return user
 
 
