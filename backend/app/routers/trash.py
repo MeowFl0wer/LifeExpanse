@@ -6,6 +6,7 @@ from ..db import get_db
 from ..models import Content, User
 from ..schemas import TrashOut
 from ..security import current_user
+from .. import media_links
 from .. import services as svc
 
 router = APIRouter(prefix="/api/v1/trash", tags=["trash"])
@@ -53,6 +54,9 @@ def restore(content_id: str, actor: User = Depends(current_user), db: Session = 
     if clash:
         item.slug = svc.unique_slug(db, actor.id, item.slug)
     item.deleted_at = None
+    # Re-attach whatever the body still points at, so a restored note keeps
+    # its images instead of watching them get swept a week later.
+    media_links.reconcile(db, item)
     db.commit()
     db.refresh(item)
     return svc.to_out(item)
@@ -60,7 +64,11 @@ def restore(content_id: str, actor: User = Depends(current_user), db: Session = 
 
 @router.delete("/{content_id}", status_code=status.HTTP_204_NO_CONTENT)
 def purge(content_id: str, actor: User = Depends(current_user), db: Session = Depends(get_db)):
-    db.delete(_binned(db, content_id, actor))
+    item = _binned(db, content_id, actor)
+    # Nothing left to restore into, so the files go too rather than becoming
+    # orphans by another name.
+    media_links.purge_for_content(db, item.id)
+    db.delete(item)
     db.commit()
 
 
@@ -70,5 +78,6 @@ def empty(actor: User = Depends(current_user), db: Session = Depends(get_db)):
         select(Content).where(Content.author_id == actor.id, Content.deleted_at.is_not(None))
     ).all()
     for item in rows:
+        media_links.purge_for_content(db, item.id)
         db.delete(item)
     db.commit()

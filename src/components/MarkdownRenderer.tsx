@@ -1,5 +1,6 @@
 import { headingId } from '../lib/toc'
 import { parseWikiLinks } from '../lib/wikilink'
+import { downloadUrl, isManagedMedia, thumbnailUrl } from '../lib/mediaUrl'
 
 export interface WikiLinkTarget {
   /** Where the link should go, or undefined when nothing matches yet. */
@@ -78,7 +79,28 @@ function parseMarkdown(
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
 
   // Images (before links to avoid conflicts)
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />')
+  // Images display the thumbnail. The original is only fetched when the
+  // reader asks for it — a page of ten photos should not pull ten full-size
+  // files to show them a few hundred pixels wide.
+  //
+  // The two controls sit in the bottom-right corner and appear on hover. On a
+  // touch screen there is no hover, so they stay visible: a control nobody can
+  // reach is not subtle design, it is a missing feature.
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_full, alt: string, src: string) => {
+    const safeSrc = escapeHtml(src)
+    const safeAlt = escapeHtml(alt)
+    if (!isManagedMedia(src)) {
+      return `<img src="${safeSrc}" alt="${safeAlt}" />`
+    }
+    return (
+      `<span class="life-figure">` +
+      `<img src="${escapeHtml(thumbnailUrl(src))}" alt="${safeAlt}" loading="lazy" />` +
+      `<span class="life-figure-actions">` +
+      `<a href="${safeSrc}" target="_blank" rel="noopener noreferrer">查看原图</a>` +
+      `<a href="${escapeHtml(downloadUrl(src))}" download>下载</a>` +
+      `</span></span>`
+    )
+  })
 
   // Links
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
@@ -104,7 +126,7 @@ function parseMarkdown(
   for (const line of lines) {
     const trimmed = line.trim()
     if (!trimmed) continue
-    if (/^<(h[1-6]|p|ul|ol|li|blockquote|pre|hr|img|div)/.test(trimmed)) {
+    if (/^<(h[1-6]|p|ul|ol|li|blockquote|pre|hr|img|div|span class="life-figure")/.test(trimmed)) {
       result.push(trimmed)
     } else {
       result.push(`<p>${trimmed}</p>`)

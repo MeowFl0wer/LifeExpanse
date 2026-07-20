@@ -42,6 +42,23 @@ def _quota_used(db: Session, user: User) -> int:
     ) or 0
 
 
+def _media_out(media: MediaFile) -> dict:
+    return {
+        "id": media.id,
+        "url": f"/api/v1/media/{media.id}",
+        # Empty when there is no thumbnail, so the client falls back to the
+        # original rather than requesting a file that does not exist.
+        "thumbnail_url": f"/api/v1/media/{media.id}?variant=thumb" if media.has_thumbnail else "",
+        "kind": media.kind,
+        "mime": media.mime,
+        "size_bytes": media.size_bytes,
+        "visibility": media.visibility,
+        "original_name": media.original_name,
+        "has_thumbnail": media.has_thumbnail,
+        "content_id": media.content_id,
+    }
+
+
 def _visible_to(media: MediaFile, viewer: User | None) -> bool:
     if media.deleted_at is not None:
         return False
@@ -95,6 +112,10 @@ async def upload(
 
     media_id = storage.new_media_id()
     digest = storage.save(media_id, sniffed.mime, data)
+    # Display uses this; the original is only fetched when a reader asks to
+    # see or download it. Small images get none — there would be nothing saved.
+    # Videos get a poster frame, so a page of clips is not a page of grey boxes.
+    has_thumb = storage.make_thumbnail(media_id, sniffed.mime, data)
 
     media = MediaFile(
         id=media_id,
@@ -106,20 +127,13 @@ async def upload(
         # Stored for display only; it is never used to build a path.
         original_name=(file.filename or "")[:255],
         visibility="public" if as_avatar else visibility,
+        has_thumbnail=has_thumb,
     )
     db.add(media)
     db.add(AuditLog(actor=user.username, event="media_uploaded", detail=f"{sniffed.kind} {len(data)}B"))
     db.commit()
 
-    return {
-        "id": media.id,
-        "url": f"/api/v1/media/{media.id}",
-        "kind": media.kind,
-        "mime": media.mime,
-        "size_bytes": media.size_bytes,
-        "visibility": media.visibility,
-        "original_name": media.original_name,
-    }
+    return _media_out(media)
 
 
 @router.get("/quota")
@@ -162,24 +176,14 @@ def list_media(
     if kind:
         query = query.where(MediaFile.kind == kind)
     rows = db.scalars(query.order_by(MediaFile.created_at.desc())).all()
-    return [
-        {
-            "id": m.id,
-            "url": f"/api/v1/media/{m.id}",
-            "kind": m.kind,
-            "mime": m.mime,
-            "size_bytes": m.size_bytes,
-            "visibility": m.visibility,
-            "original_name": m.original_name,
-            "created_at": m.created_at,
-        }
-        for m in rows
-    ]
+    return [{**_media_out(m), "created_at": m.created_at} for m in rows]
 
 
 @router.get("/{media_id}")
 def serve(
     media_id: str,
+    variant: str = Query("", pattern="^(thumb|)$"),
+    download: bool = False,
     viewer: User | None = Depends(current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -189,13 +193,27 @@ def serve(
     if media is None or not _visible_to(media, viewer):
         raise HTTPException(status.HTTP_404_NOT_FOUND, NOT_FOUND)
 
-    data = storage.load(media.id, media.mime)
+    served_mime = media.mime
+    data = None
+    if variant == "thumb" and media.has_thumbnail:
+        data = storage.load_thumbnail(media.id, media.mime)
+        if data is not None:
+            served_mime = "image/webp"
+    if data is None:
+        # Asking for a thumbnail that was never made falls back to the
+        # original rather than 404ing: the caller wanted the picture.
+        data = storage.load(media.id, media.mime)
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, NOT_FOUND)
 
+    disposition = "attachment" if download else "inline"
+    # The filename is the user's own text, so it is quoted and stripped of
+    # anything that could break out of the header.
+    safe_name = (media.original_name or f"{media.id}").replace('"', "").replace("\n", "")[:120]
+
     return Response(
         content=data,
-        media_type=media.mime,
+        media_type=served_mime,
         headers={
             # The id is random and the bytes never change, so this is safe to
             # cache hard. Private files are marked so no shared cache keeps them.
@@ -207,7 +225,7 @@ def serve(
             # Belt and braces: even if something slipped past the sniffing, the
             # browser must not be talked into treating it as a document.
             "X-Content-Type-Options": "nosniff",
-            "Content-Disposition": "inline",
+            "Content-Disposition": f'{disposition}; filename="{safe_name}"',
         },
     )
 

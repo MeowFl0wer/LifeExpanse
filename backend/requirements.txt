@@ -9,3 +9,5 @@ python-multipart>=0.0.9
 cryptography>=43.0
 pyotp>=2.9
 alembic>=1.13
+Pillow>=10.4
+imageio-ffmpeg>=0.5

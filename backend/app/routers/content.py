@@ -6,6 +6,7 @@ from ..db import get_db
 from ..models import Content, User, utcnow
 from ..schemas import ContentIn, ContentOut, ContentPatch
 from ..security import current_user, current_user_optional
+from .. import media_links
 from .. import services as svc
 
 router = APIRouter(prefix="/api/v1/content", tags=["content"])
@@ -113,6 +114,9 @@ def create(payload: ContentIn, actor: User = Depends(current_user), db: Session 
     db.flush()
     svc.set_tags(db, item, payload.tags)
     svc.apply_membership(db, item, actor, payload.folder_ids, payload.series_ids)
+    # Attaching is derived from the body, not asked of the caller — a path that
+    # forgot to declare it would quietly create an orphan.
+    media_links.reconcile(db, item)
     db.commit()
     db.refresh(item)
     return svc.to_out(item)
@@ -155,6 +159,7 @@ def update(
             data.get("series_ids", [s.id for s in item.series]),
         )
 
+    media_links.reconcile(db, item)
     db.commit()
     db.refresh(item)
     return svc.to_out(item)
@@ -192,4 +197,7 @@ def soft_delete(content_id: str, actor: User = Depends(current_user), db: Sessio
     """Moves content to the recycle bin rather than removing it."""
     item = svc.owned_content(db, content_id, actor)
     item.deleted_at = utcnow()
+    # Marked orphaned, not deleted: trashed content can be restored, and
+    # restoring it with its images missing would be the worse outcome.
+    media_links.release_for_content(db, item.id)
     db.commit()

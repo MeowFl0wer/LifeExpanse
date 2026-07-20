@@ -100,6 +100,169 @@ def path_for(media_id: str, mime: str) -> Path:
     return media_root() / safe[:2] / safe[2:4] / f"{safe}{_EXTENSIONS.get(mime, '.bin')}"
 
 
+def thumb_path_for(media_id: str, mime: str) -> Path:
+    """Thumbnails sit beside the original with a suffix, so removing a file
+    means removing two predictable paths rather than searching."""
+    original = path_for(media_id, mime)
+    return original.with_name(f"{original.stem}.thumb.webp")
+
+
+def make_thumbnail(media_id: str, mime: str, data: bytes) -> bool:
+    """Writes a WebP thumbnail beside the original. False if there is no point.
+
+    Display always uses this; the original is only fetched when the reader
+    asks to see or download it. A page of ten photos should not pull ten
+    full-size files.
+
+    Videos get a poster frame instead, which is the closest equivalent — see
+    `make_video_poster`.
+
+    Failure is not fatal — a file this cannot read is still a valid upload, it
+    just gets shown at full size.
+    """
+    if mime.startswith("video/"):
+        return make_video_poster(media_id, mime, data)
+    if not mime.startswith("image/"):
+        return False
+
+    try:
+        from PIL import Image
+    except ImportError:  # pragma: no cover
+        return False
+
+    settings = get_settings()
+    edge = settings.thumbnail_max_edge
+
+    try:
+        import io
+
+        with Image.open(io.BytesIO(data)) as img:
+            frames = getattr(img, "n_frames", 1)
+            if img.width <= edge and img.height <= edge and frames == 1:
+                # Already small enough; a "thumbnail" would be no smaller.
+                return False
+
+            target = thumb_path_for(media_id, mime)
+            target.parent.mkdir(parents=True, exist_ok=True)
+
+            if frames > 1:
+                return _save_animated_thumbnail(img, target, edge)
+
+            flat = img.convert("RGB") if img.mode in ("P", "RGBA", "LA") else img
+            flat.thumbnail((edge, edge), Image.LANCZOS)
+            flat.save(target, "WEBP", quality=82, method=4)
+            return True
+    except Exception:
+        return False
+
+
+def _save_animated_thumbnail(img, target: Path, edge: int) -> bool:
+    """Keeps an animated GIF animated.
+
+    A still first frame would make every animation look broken until it was
+    clicked, which is worse than showing it small.
+    """
+    from PIL import Image, ImageSequence
+
+    frames = []
+    durations = []
+    for frame in ImageSequence.Iterator(img):
+        copy = frame.convert("RGBA")
+        copy.thumbnail((edge, edge), Image.LANCZOS)
+        frames.append(copy)
+        durations.append(frame.info.get("duration", 100))
+
+    if not frames:
+        return False
+
+    frames[0].save(
+        target, "WEBP", save_all=True, append_images=frames[1:],
+        duration=durations, loop=img.info.get("loop", 0), quality=75, method=4,
+    )
+    return True
+
+
+def make_video_poster(media_id: str, mime: str, data: bytes) -> bool:
+    """Extracts a frame from a video to stand in for it.
+
+    Without one, a page of videos is a page of grey rectangles. The frame is
+    taken a second in rather than at zero: many videos open on black.
+
+    ffmpeg comes from `imageio-ffmpeg`, which ships a static binary as a pip
+    package. Using the system ffmpeg would mean a deployment could be missing
+    it and nobody would find out until somebody uploaded a video.
+
+    Never fatal: no poster just means the video shows without one.
+    """
+    settings = get_settings()
+
+    try:
+        import imageio_ffmpeg
+    except ImportError:  # pragma: no cover
+        return False
+
+    import subprocess
+    import tempfile
+
+    source = path_for(media_id, mime)
+    if not source.is_file():
+        # Called before the bytes were written; fall back to a temp copy.
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as handle:
+            handle.write(data)
+            source = Path(handle.name)
+        temporary = True
+    else:
+        temporary = False
+
+    target = thumb_path_for(media_id, mime)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        result = subprocess.run(
+            [
+                imageio_ffmpeg.get_ffmpeg_exe(),
+                "-loglevel", "error",
+                # Seeking before -i is the fast path; -noaccurate_seek keeps it
+                # cheap on a keyframe boundary, which is fine for a poster.
+                "-ss", "1", "-i", str(source),
+                "-frames:v", "1",
+                "-vf", f"scale='min({settings.thumbnail_max_edge},iw)':-2",
+                "-f", "webp", "-y", str(target),
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+        if result.returncode != 0 or not target.is_file():
+            # A clip shorter than a second has no frame at 1s; retry from the start.
+            result = subprocess.run(
+                [
+                    imageio_ffmpeg.get_ffmpeg_exe(),
+                    "-loglevel", "error",
+                    "-i", str(source), "-frames:v", "1",
+                    "-vf", f"scale='min({settings.thumbnail_max_edge},iw)':-2",
+                    "-f", "webp", "-y", str(target),
+                ],
+                capture_output=True,
+                timeout=30,
+            )
+        return target.is_file() and target.stat().st_size > 0
+    except (subprocess.SubprocessError, OSError):
+        return False
+    finally:
+        if temporary:
+            try:
+                source.unlink()
+            except OSError:
+                pass
+
+
+def load_thumbnail(media_id: str, mime: str) -> bytes | None:
+    target = thumb_path_for(media_id, mime)
+    if not target.is_file():
+        return None
+    return target.read_bytes()
+
+
 def save(media_id: str, mime: str, data: bytes) -> str:
     """Writes the bytes and returns their sha256."""
     target = path_for(media_id, mime)
@@ -116,9 +279,13 @@ def load(media_id: str, mime: str) -> bytes | None:
 
 
 def remove(media_id: str, mime: str) -> None:
-    """Deletes the bytes. Missing is fine — the goal is that they are gone."""
-    target = path_for(media_id, mime)
-    try:
-        target.unlink()
-    except FileNotFoundError:
-        pass
+    """Deletes the bytes and the thumbnail.
+
+    Missing is fine — the goal is that they are gone, not that we were the one
+    to remove them.
+    """
+    for target in (path_for(media_id, mime), thumb_path_for(media_id, mime)):
+        try:
+            target.unlink()
+        except FileNotFoundError:
+            pass

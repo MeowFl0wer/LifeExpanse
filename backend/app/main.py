@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from . import media_links
 from .bootstrap import ensure_admin
 from .config import get_settings
 from .db import SessionLocal
@@ -32,6 +33,12 @@ async def lifespan(_: FastAPI):
     run_migrations()
     with SessionLocal() as db:
         ensure_admin(db)
+        # Files nothing references any more. Doing it here means a restart is
+        # enough to keep the media directory from growing without bound; the
+        # admin console can also trigger it on demand.
+        swept = media_links.sweep(db)
+        if swept:
+            logging.getLogger("lifeexpanse").info("swept %d unreferenced media files", swept)
     yield
 
 
