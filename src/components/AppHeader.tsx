@@ -95,8 +95,8 @@ export default function AppHeader() {
             {/* User avatar */}
             <button
               className="flex items-center gap-2 text-sm text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors"
-              onClick={() => navigate('/account')}
-              aria-label="账号设置"
+              onClick={() => navigate('/me')}
+              aria-label="我的"
             >
               <img
                 src={euanProfile.avatar}
@@ -148,11 +148,11 @@ export default function AppHeader() {
               搜索
             </Link>
             <Link
-              to="/account"
+              to="/me"
               className="block px-2 py-2.5 text-sm text-[color:var(--muted-foreground)] no-underline hover:text-[color:var(--foreground)]"
               onClick={() => setMenuOpen(false)}
             >
-              账号与备份
+              我的
             </Link>
             <Link
               to="/trash"

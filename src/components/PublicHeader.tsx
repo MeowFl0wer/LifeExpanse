@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import Logo from './Logo'
 import { useCurrentUser, clearCurrentUser } from '../auth'
 
-const navLinks = [
+const baseNavLinks = [
   { label: '主页', to: '/euan' },
   { label: '笔记与文章', to: '/euan/pkm' },
   { label: '随想', to: '/euan/thoughts' },
@@ -12,14 +12,27 @@ const navLinks = [
   { label: '足迹地图', to: '/euan/map' },
   { label: '飞行轨迹', to: '/euan/flights' },
   { label: '独立空间', to: '/euan/space' },
-  { label: '关于', to: '/about' },
 ]
+
+/**
+ * The last nav slot depends on who is looking.
+ *
+ * Signed in it is 「我的」, the account hub. A guest still gets 「关于」: About
+ * explains what this site is, which is precisely what a first-time visitor
+ * needs, so it stays publicly reachable rather than moving behind the login.
+ */
+function navLinksFor(signedIn: boolean) {
+  return signedIn
+    ? [...baseNavLinks, { label: '我的', to: '/me' }]
+    : [...baseNavLinks, { label: '关于', to: '/about' }]
+}
 
 export default function PublicHeader() {
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
   const currentUser = useCurrentUser()
+  const navLinks = navLinksFor(currentUser !== null)
 
   function handleLogout() {
     clearCurrentUser()

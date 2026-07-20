@@ -13,6 +13,9 @@ export const euanProfile: UserProfile = {
   bio: '',
   avatar: '/brand/euan-avatar.jpg',
   publicSince: '2023-03-15',
+  // Shown masked; the full address is only ever revealed in the settings form.
+  email: 'euan@example.com',
+  backupEmail: '',
 }
 
 export const siteStats: SiteStats = {
