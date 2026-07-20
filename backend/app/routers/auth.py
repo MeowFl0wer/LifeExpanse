@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import accounts as acc
@@ -155,9 +155,10 @@ def reset_password(payload: ResetPasswordIn, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=UserOut)
 def login(payload: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
+    credential = payload.credential.strip().lower()
     user = db.scalar(
         select(User).where(
-            (User.username == payload.credential.lower()) | (User.email == payload.credential)
+            (func.lower(User.username) == credential) | (func.lower(User.email) == credential)
         )
     )
     # One message for both cases, so it cannot be used to enumerate accounts.
@@ -165,6 +166,26 @@ def login(payload: LoginIn, request: Request, response: Response, db: Session = 
         db.add(AuditLog(actor=payload.credential[:60], event="login_failed"))
         db.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "用户名或密码不正确")
+
+    # 2FA gate. No session exists yet, so a caller who only has the password
+    # gets nothing usable — the "needs 2FA" answer is not itself a login.
+    if user.totp_enabled:
+        from .. import totp as tf
+
+        if not payload.totp_code:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "需要两步验证码",
+                headers={"X-Requires-2FA": "1"},
+            )
+        if not tf.verify_totp_or_recovery(db, user, payload.totp_code):
+            db.add(AuditLog(actor=user.username, event="login_2fa_failed"))
+            db.commit()
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "两步验证码不正确",
+                headers={"X-Requires-2FA": "1"},
+            )
 
     token = create_session(db, user, request.headers.get("user-agent", ""))
     _set_cookie(response, token, payload.remember)

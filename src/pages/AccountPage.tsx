@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
+import SecuritySettings from '../components/SecuritySettings'
 import { euanProfile, deviceSessions, adminAccessRecords, storageStats } from '../mockData'
 import { useCurrentUser, clearCurrentUser } from '../auth'
 
@@ -149,17 +150,7 @@ export default function AccountPage() {
 
         {tab === 'security' && (
           <div className="space-y-10">
-            <section>
-              <SectionTitle title="密码" />
-              <div className="grid gap-3 sm:max-w-md">
-                <input type="password" placeholder="当前密码" className="life-input px-3 py-2 text-sm" autoComplete="current-password" />
-                <input type="password" placeholder="新密码（至少 8 位）" className="life-input px-3 py-2 text-sm" autoComplete="new-password" />
-                <input type="password" placeholder="确认新密码" className="life-input px-3 py-2 text-sm" autoComplete="new-password" />
-              </div>
-              <button type="button" onClick={() => alert('前端原型：修改密码需要真实后端支持（Argon2id 哈希）。')} className="life-button life-button-primary mt-4 text-sm">
-                修改密码
-              </button>
-            </section>
+            <SecuritySettings />
 
             <section className="border-t border-[color:var(--border)] pt-8">
               <SectionTitle title="登录设备" desc="可以退出其他设备上的会话。" />

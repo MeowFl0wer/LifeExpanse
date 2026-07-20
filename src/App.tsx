@@ -17,6 +17,7 @@ import ContentCreatePage from './pages/ContentCreatePage'
 import SearchPage from './pages/SearchPage'
 import AccountPage from './pages/AccountPage'
 import MePage from './pages/MePage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import AdminPage from './pages/AdminPage'
 import AboutPage from './pages/AboutPage'
 import TrashPage from './pages/TrashPage'
@@ -54,6 +55,7 @@ export default function App() {
         {/* Auth pages */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
         {/* Private workspace */}
         <Route path="/app" element={<RequireAuth><AppDashboard /></RequireAuth>} />
