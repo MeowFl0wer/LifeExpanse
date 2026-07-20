@@ -11,6 +11,8 @@ import { request, usingBackend } from './http'
 export interface AccountInfo {
   username: string
   displayName: string
+  /** 'admin' or 'user'. Decides what to render; the server re-checks it. */
+  role: string
 }
 
 interface WireUser {
@@ -18,6 +20,7 @@ interface WireUser {
   username: string
   display_name: string
   bio: string
+  role?: string
 }
 
 const MOCK_USER = 'euan'
@@ -44,7 +47,7 @@ export async function login(
 ): Promise<AccountInfo> {
   if (!usingBackend()) {
     if ((credential === MOCK_USER || credential === 'euan@example.com') && password === MOCK_PASSWORD) {
-      return { username: MOCK_USER, displayName: 'Euan' }
+      return { username: MOCK_USER, displayName: 'Euan', role: 'user' }
     }
     throw new Error('用户名或密码不正确')
   }
@@ -53,7 +56,7 @@ export async function login(
       method: 'POST',
       body: { credential, password, remember, totp_code: totpCode ?? null },
     })
-    return { username: user.username, displayName: user.display_name }
+    return { username: user.username, displayName: user.display_name, role: user.role ?? 'user' }
   } catch (err) {
     // The server answers 401 with this message when the password checked out
     // but the account has 2FA on.
@@ -78,7 +81,7 @@ export async function fetchCurrentUser(): Promise<AccountInfo | null> {
   if (!usingBackend()) return null
   try {
     const user = await request<WireUser>('/auth/me')
-    return { username: user.username, displayName: user.display_name }
+    return { username: user.username, displayName: user.display_name, role: user.role ?? 'user' }
   } catch {
     return null
   }

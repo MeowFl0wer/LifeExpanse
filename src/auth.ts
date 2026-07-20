@@ -4,6 +4,29 @@ import { logout as apiLogout } from './api/auth'
 
 const SESSION_KEY = 'life_session_user'
 
+/**
+ * Whether the signed-in account is the administrator.
+ *
+ * This used to compare the username against the site owner (`euan`) — but the
+ * owner is an ordinary user with a content space, and the admin is a separate
+ * account (需求 3.1). The role now comes from the server via `/auth/me`, and
+ * every admin route re-checks it: this flag only decides what to *render*.
+ */
+const ADMIN_USERNAME = 'AdminEuan'
+let cachedRole: string | null = null
+
+export function setCurrentRole(role: string | null): void {
+  cachedRole = role
+  emit()
+}
+
+function currentIsAdmin(username: string | null): boolean {
+  if (username === null) return false
+  if (cachedRole !== null) return cachedRole === 'admin'
+  // Before /auth/me has answered (or with no backend), fall back to the name.
+  return username === ADMIN_USERNAME
+}
+
 /* The session is a reactive store rather than a bare localStorage read.
  * Reading localStorage during render gives the right answer once but never
  * updates, so a header rendered before login keeps showing the logged-out
@@ -71,6 +94,9 @@ export function clearCurrentUser(): void {
   // them visible to whoever signs in next on this browser.
   const leaving = cachedUser
   if (leaving) void clearDraftsFor(leaving)
+  // Without this a signed-out browser keeps claiming to be an admin until the
+  // next /auth/me answers.
+  cachedRole = null
   // Ends the server session as well, not just the local copy.
   void apiLogout()
   try {
@@ -95,10 +121,8 @@ export function isLoggedIn(): boolean {
 }
 
 /** Ch 21: the site owner is the super admin. Prototype stand-in for a role model. */
-const SITE_OWNER = 'euan'
-
 export function isAdmin(): boolean {
-  return getCurrentUser() === SITE_OWNER
+  return currentIsAdmin(getCurrentUser())
 }
 
 export function isOwnerOf(username: string | undefined): boolean {
@@ -114,7 +138,7 @@ export function useIsLoggedIn(): boolean {
 }
 
 export function useIsAdmin(): boolean {
-  return useCurrentUser() === SITE_OWNER
+  return currentIsAdmin(useCurrentUser())
 }
 
 export function useIsOwnerOf(username: string | undefined): boolean {
