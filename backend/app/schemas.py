@@ -16,14 +16,74 @@ class UserOut(BaseModel):
     username: str
     display_name: str
     bio: str
+    role: str
+    can_upload_image: bool
+    can_upload_video: bool
+    totp_enabled: bool
+
+
+class MeOut(UserOut):
+    """The signed-in user's own view: adds what only they may see."""
+
+    email: str
+    email_verified: bool
+    backup_email: str | None
+    backup_email_verified: bool
 
 
 class RegisterIn(BaseModel):
-    username: str = Field(min_length=3, max_length=30, pattern=r"^[a-z0-9][a-z0-9_-]{1,28}[a-z0-9]$")
+    username: str = Field(min_length=3, max_length=30)
     email: EmailStr
     password: str = Field(min_length=8, max_length=200)
+    # Proves the address is reachable and actually the registrant's.
+    code: str = Field(min_length=4, max_length=12)
     display_name: str = ""
     invite_code: str | None = None
+
+
+class EmailOnlyIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=12)
+    new_password: str = Field(min_length=8, max_length=200)
+
+
+class ChangePasswordIn(BaseModel):
+    """需求: changing a password always requires an emailed code as well.
+
+    Knowing the current password is not enough — an unlocked laptop would
+    otherwise be all it takes.
+    """
+
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=200)
+    # One of the two must be supplied. Email is the default path; the TOTP code
+    # is the way through when the address is no longer reachable.
+    email_code: str | None = None
+    totp_code: str | None = None
+
+
+class ChangeEmailIn(BaseModel):
+    current_password: str
+    new_email: EmailStr
+    # Proves the new address is reachable.
+    new_email_code: str
+    # Proves it is really the account holder asking.
+    email_code: str | None = None
+    totp_code: str | None = None
+
+
+class InviteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    code: str
+    note: str
+    used_at: datetime | None
+    revoked_at: datetime | None
+    created_at: datetime
 
 
 class LoginIn(BaseModel):

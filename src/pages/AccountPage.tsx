@@ -53,8 +53,15 @@ export default function AccountPage() {
       <AppHeader />
 
       <main className="life-shell max-w-4xl flex-1 py-10">
+        <Link
+          to="/me"
+          className="mb-5 inline-block text-sm text-[color:var(--muted-foreground)] transition-colors hover:text-[color:var(--primary)]"
+        >
+          ← 返回我的
+        </Link>
+
         <div className="mb-8 border-b border-[color:var(--border)] pb-8">
-          <p className="life-kicker mb-2">账号</p>
+          <p className="life-kicker mb-2">设置</p>
           <h1 className="text-3xl font-light text-[color:var(--foreground)]">
             {euanProfile.displayName}
             <span className="ml-3 text-base text-[color:var(--muted-foreground)]">@{currentUser}</span>
@@ -285,9 +292,12 @@ export default function AccountPage() {
           </div>
         )}
 
-        <div className="mt-12 border-t border-[color:var(--border)] pt-6">
+        <div className="mt-12 flex flex-wrap gap-5 border-t border-[color:var(--border)] pt-6">
+          <Link to="/me" className="text-sm text-[color:var(--muted-foreground)] transition-colors hover:text-[color:var(--primary)]">
+            ← 返回我的
+          </Link>
           <Link to="/app" className="text-sm text-[color:var(--muted-foreground)] transition-colors hover:text-[color:var(--primary)]">
-            ← 返回工作台
+            返回工作台
           </Link>
         </div>
       </main>

@@ -44,15 +44,110 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     username: Mapped[str] = mapped_column(String(30), unique=True, index=True)
+    # Primary address: sign-in, recovery and notifications. One address may
+    # only ever belong to one account, so recovery is never ambiguous.
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Optional second address, used only for recovery. Also unique across the
+    # table so it cannot double as somebody else's primary.
+    backup_email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    backup_email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+
     display_name: Mapped[str] = mapped_column(String(60), default="")
     bio: Mapped[str] = mapped_column(Text, default="")
     # Argon2id via passlib; the plain password is never stored or logged.
     password_hash: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # admin | user. An admin has no content space of its own (需求 3.1).
+    role: Mapped[str] = mapped_column(String(16), default="user", index=True)
+
+    # Upload permissions are granted by an admin. Images default on because
+    # writing without them feels broken; video is costly enough to be opt-in.
+    can_upload_image: Mapped[bool] = mapped_column(Boolean, default=True)
+    can_upload_video: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # TOTP. The secret is encrypted at rest, never returned by any endpoint.
+    totp_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    login_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     contents: Mapped[list[Content]] = relationship(back_populates="author", cascade="all, delete-orphan")
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == "admin"
+
+
+class VerificationCode(Base):
+    """A short-lived email code for registration, recovery and step-up checks.
+
+    A code is a temporary password, so it is stored hashed exactly like one.
+    `attempts` caps guessing; `used_at` makes a code single-use even inside its
+    window; `expires_at` keeps that window short.
+    """
+
+    __tablename__ = "verification_codes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    # register | reset_password | change_email | change_password | disable_2fa
+    purpose: Mapped[str] = mapped_column(String(32), index=True)
+    # Lower-cased address the code was sent to. Not a foreign key: registration
+    # issues codes before any user row exists.
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    code_hash: Mapped[str] = mapped_column(String(255))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class RecoveryCode(Base):
+    """Single-use backup code for when the authenticator is unavailable.
+
+    Without these, a lost phone means a permanently locked account that only a
+    database edit can rescue.
+    """
+
+    __tablename__ = "recovery_codes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(255))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class InviteCode(Base):
+    """Single-use registration invite, issued from the admin console."""
+
+    __tablename__ = "invite_codes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    note: Mapped[str] = mapped_column(String(200), default="")
+    used_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    @property
+    def is_spent(self) -> bool:
+        return self.used_at is not None or self.revoked_at is not None
+
+
+class SiteSetting(Base):
+    """Single-row key/value store for settings an admin can change at runtime."""
+
+    __tablename__ = "site_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class Content(Base):
