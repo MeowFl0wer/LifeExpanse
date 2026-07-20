@@ -142,8 +142,10 @@ export async function listPkm(params: ListParams): Promise<ContentItem[]> {
 export async function getPkmBySlug(p: {
   author: string
   slug: string
+  type?: ContentItem['type']
 }): Promise<ContentItem> {
-  return fromWire(await request<WireContent>(`/content/${p.author}/pkm/${p.slug}`))
+  const type = p.type ?? 'pkm'
+  return fromWire(await request<WireContent>(`/content/${p.author}/${type}/${p.slug}`))
 }
 
 /**

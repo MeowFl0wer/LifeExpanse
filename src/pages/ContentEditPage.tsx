@@ -3,17 +3,16 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import VisibilityBadge from '../components/VisibilityBadge'
 import MediaInsertMenu from '../components/MediaInsertMenu'
 import MarkdownRenderer from '../components/MarkdownRenderer'
-import {
-  getContentBySlug,
-  folders as allFolders, series as allSeries } from '../mockData'
 import { extractHashTags } from '../lib/library'
 import LibraryPicker from '../components/LibraryPicker'
-import { updatePkm, createFolder, createSeriesEntry } from '../api/pkm'
+import {
+  updatePkm, getPkmBySlug, createFolder, createSeriesEntry, listFolders, listSeries,
+} from '../api/pkm'
 import AutosaveIndicator from '../components/AutosaveStatus'
 import DraftRestoredBanner from '../components/DraftRestoredBanner'
 import { useAutosave } from '../hooks/useAutosave'
 import { loadDraft, editKey, type Draft } from '../api/drafts'
-import type { ContentKind, ThoughtSourceType, ThoughtType, Visibility } from '../types'
+import type { ContentItem, ContentKind, Folder, Series, ThoughtSourceType, ThoughtType, Visibility } from '../types'
 import { useCurrentUser } from '../auth'
 
 type Tab = 'write' | 'preview'
@@ -26,6 +25,14 @@ interface EditorDraft {
   visibility: Visibility
   contentKind: ContentKind
   thoughtType: ThoughtType
+  // Excerpt provenance. Without these in the draft, changing only the source
+  // left the page looking unmodified: no "unsaved" state, no leave warning,
+  // and nothing autosaved.
+  sourceAuthor: string
+  sourceTitle: string
+  sourceType: ThoughtSourceType
+  sourceUrl: string
+  sourceLocator: string
   allowComments: boolean
   summary: string
   cover: string
@@ -42,11 +49,62 @@ interface ContentEditPageProps {
   section: 'thoughts' | 'diary' | 'pkm'
 }
 
+/** A route section maps to exactly one content type. */
+const SECTION_TYPE: Record<ContentEditPageProps['section'], ContentItem['type']> = {
+  thoughts: 'thought',
+  pkm: 'pkm',
+  diary: 'diary',
+}
+
 export default function ContentEditPage({ section }: ContentEditPageProps) {
   const { username, slug } = useParams<{ username: string; slug: string }>()
   const navigate = useNavigate()
   const currentUser = useCurrentUser()
-  const item = getContentBySlug(slug ?? '')
+  // Loaded through the data layer, not the store: with a backend configured
+  // the store does not have it, so the editor opened blank on a real entry.
+  const [item, setItem] = useState<ContentItem | null | undefined>(undefined)
+
+  /** Fills every field from a freshly loaded item. */
+  function hydrate(found: ContentItem) {
+    setTitle(found.title)
+    setBody(found.body)
+    setTagInput(found.tags.map(t => t.name).join(', '))
+    setVisibility(found.visibility)
+    setContentKind(found.contentKind ?? 'note')
+    setThoughtType(found.thoughtType ?? 'original')
+    setSourceAuthor(found.sourceAuthor ?? '')
+    setSourceTitle(found.sourceTitle ?? '')
+    setSourceType(found.sourceType ?? 'book')
+    setSourceUrl(found.sourceUrl ?? '')
+    setSourceLocator(found.sourceLocator ?? '')
+    setAllowComments(found.allowComments ?? false)
+    setSummary(found.summary ?? '')
+    setCover(found.cover ?? '')
+    setCategory(found.category ?? '')
+    setSeoTitle(found.seoTitle ?? '')
+    setSeoDescription(found.seoDescription ?? '')
+    setFavorite(found.favorite ?? false)
+    setArchived(found.archived ?? false)
+    setFolderIds(found.folderIds ?? [])
+    setSeriesIds(found.seriesIds ?? [])
+  }
+  useEffect(() => {
+    let cancelled = false
+    getPkmBySlug({
+      author: username ?? '',
+      slug: slug ?? '',
+      viewer: currentUser,
+      type: SECTION_TYPE[section],
+    })
+      .then(found => {
+        if (cancelled) return
+        // Same update as the item, so the form is never on screen empty.
+        hydrate(found)
+        setItem(found)
+      })
+      .catch(() => { if (!cancelled) setItem(null) })
+    return () => { cancelled = true }
+  }, [username, slug, currentUser, section])
 
   const [title, setTitle] = useState(item?.title ?? '')
   const [body, setBody] = useState(item?.body ?? '')
@@ -72,7 +130,24 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
   const [archived, setArchived] = useState(item?.archived ?? false)
   const [folderIds, setFolderIds] = useState<string[]>(item?.folderIds ?? [])
   const [seriesIds, setSeriesIds] = useState<string[]>(item?.seriesIds ?? [])
-  const [, bumpLibrary] = useState(0)
+
+
+  const [libraryTick, bumpLibrary] = useState(0)
+  const [allFolders, setAllFolders] = useState<Folder[]>([])
+  const [allSeries, setAllSeries] = useState<Series[]>([])
+  useEffect(() => {
+    if (!item) return
+    let cancelled = false
+    void Promise.all([
+      listFolders(item.author, currentUser),
+      listSeries(item.author, currentUser),
+    ]).then(([fs, ss]) => {
+      if (cancelled) return
+      setAllFolders(fs)
+      setAllSeries(ss)
+    })
+    return () => { cancelled = true }
+  }, [item?.author, currentUser, libraryTick])
   const [tab, setTab] = useState<Tab>('write')
   const [restored, setRestored] = useState<Draft<EditorDraft> | null>(null)
   const [draftChecked, setDraftChecked] = useState(false)
@@ -86,6 +161,11 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
     visibility !== (item?.visibility ?? 'public') ||
     contentKind !== (item?.contentKind ?? 'note') ||
     thoughtType !== (item?.thoughtType ?? 'original') ||
+    sourceAuthor !== (item?.sourceAuthor ?? '') ||
+    sourceTitle !== (item?.sourceTitle ?? '') ||
+    sourceType !== (item?.sourceType ?? 'book') ||
+    sourceUrl !== (item?.sourceUrl ?? '') ||
+    sourceLocator !== (item?.sourceLocator ?? '') ||
     allowComments !== (item?.allowComments ?? false) ||
     summary !== (item?.summary ?? '') ||
     cover !== (item?.cover ?? '') ||
@@ -112,6 +192,7 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
   // Everything the editor holds, so a restored draft can rebuild the form.
   const draftValue: EditorDraft = {
     title, body, tagInput, visibility, contentKind, thoughtType, allowComments,
+    sourceAuthor, sourceTitle, sourceType, sourceUrl, sourceLocator,
     summary, cover, category, seoTitle, seoDescription, favorite, archived,
     folderIds, seriesIds,
   }
@@ -137,6 +218,11 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
         setVisibility(d.visibility)
         setContentKind(d.contentKind)
         setThoughtType(d.thoughtType)
+        setSourceAuthor(d.sourceAuthor ?? '')
+        setSourceTitle(d.sourceTitle ?? '')
+        setSourceType(d.sourceType ?? 'book')
+        setSourceUrl(d.sourceUrl ?? '')
+        setSourceLocator(d.sourceLocator ?? '')
         setAllowComments(d.allowComments)
         setSummary(d.summary)
         setCover(d.cover)
@@ -230,7 +316,15 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
     setBody(prev => prev + '\n\n' + markdown)
   }, [])
 
-  if (!item) {
+  if (item === undefined) {
+    return (
+      <div className="life-page flex min-h-screen items-center justify-center">
+        <p className="text-sm text-[color:var(--muted-foreground)]">加载中…</p>
+      </div>
+    )
+  }
+
+  if (item === null) {
     return (
       <div className="life-page flex min-h-screen items-center justify-center">
         <p className="text-sm text-[color:var(--muted-foreground)]">内容不存在</p>
@@ -552,8 +646,8 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
               )}
 
               <LibraryPicker
-                folders={allFolders.filter(f => f.owner === item.author)}
-                series={allSeries.filter(s => s.owner === item.author)}
+                folders={allFolders}
+                series={allSeries}
                 folderIds={folderIds}
                 seriesIds={seriesIds}
                 onChange={next => { setFolderIds(next.folderIds); setSeriesIds(next.seriesIds) }}

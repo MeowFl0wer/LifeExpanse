@@ -83,10 +83,13 @@ export async function getPkmBySlug(params: {
   author: string
   slug: string
   viewer: string | null
+  /** Defaults to 'pkm'. */
+  type?: ContentItem['type']
 }): Promise<ContentItem> {
   if (usingBackend()) return remote.getPkmBySlug(params)
+  const type = params.type ?? 'pkm'
   const item = allContent.find(
-    c => c.slug === params.slug && c.type === 'pkm' && c.author === params.author
+    c => c.slug === params.slug && c.type === type && c.author === params.author
   )
   // Same response whether it is missing, of the wrong type, owned by someone
   // else, or hidden — so the reply cannot be used to probe for private content.

@@ -8,15 +8,11 @@ import LibraryItemForm, { type LibraryItemDraft } from '../components/LibraryIte
 import TagFilterStrip from '../components/TagFilterStrip'
 import { visibilityConfig } from '../components/VisibilityBadge'
 import {
-  allContent, addContentItem, makeUniqueSlug,
-  nextId,
-} from '../mockData'
-import {
   itemsInFolder, foldersInSeries, looseItemsInSeries, allItemsInSeries, matchesLibraryKeyword,
 } from '../lib/library'
 import {
   removeFolder, removeSeries, listPkm, listFolders, listSeries,
-  createFolder, createSeriesEntry, saveFolder, saveSeries,
+  createPkm, createFolder, createSeriesEntry, saveFolder, saveSeries,
 } from '../api/pkm'
 import { loginUrlFor } from '../lib/redirect'
 import { useAutosave } from '../hooks/useAutosave'
@@ -49,10 +45,11 @@ const sourceTypeLabels = {
   speech: '演讲', webpage: '网页', other: '其他',
 }
 
-function matchesSection(item: ContentItem, section: ContentSection) {
-  if (section === 'thoughts') return item.type === 'thought'
-  if (section === 'pkm') return item.type === 'pkm'
-  return item.type === 'diary'
+/** A route section maps to exactly one content type. */
+const SECTION_TYPE: Record<ContentSection, ContentItem['type']> = {
+  thoughts: 'thought',
+  pkm: 'pkm',
+  diary: 'diary',
 }
 
 function tagFacets(items: readonly ContentItem[]): { name: string; count: number }[] {
@@ -104,39 +101,34 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     setEditingFolder(false)
   }
 
-  // PKM is served by the data layer, which owns the permission rules. Other
-  // sections still read the store directly and will migrate the same way.
-  const [pkmItems, setPkmItems] = useState<ContentItem[] | null>(null)
+  // Every section is served by the data layer, which owns the permission
+  // rules. Reading the store directly for thoughts and diary meant that with a
+  // backend configured they were written to the server and then read from
+  // memory — so a new entry saved fine and then did not appear.
+  const [items_, setItems_] = useState<ContentItem[] | null>(null)
   const [pkmFolders, setPkmFolders] = useState<Folder[]>([])
   const [pkmSeries, setPkmSeries] = useState<Series[]>([])
 
   useEffect(() => {
-    if (sec !== 'pkm' || !username) return
+    if (!username) return
     let cancelled = false
     void Promise.all([
       // Archived content stays out of the default lists; the Drafts view and
       // an explicit filter are the only ways to reach it.
-      listPkm({ author: username, viewer: currentUser }),
-      listFolders(username, currentUser),
-      listSeries(username, currentUser),
+      listPkm({ author: username, viewer: currentUser, type: SECTION_TYPE[sec] }),
+      // Folders and series only exist for notes and articles.
+      sec === 'pkm' ? listFolders(username, currentUser) : Promise.resolve([]),
+      sec === 'pkm' ? listSeries(username, currentUser) : Promise.resolve([]),
     ]).then(([items, fs, ss]) => {
       if (cancelled) return
-      setPkmItems(items)
+      setItems_(items)
       setPkmFolders(fs)
       setPkmSeries(ss)
     })
     return () => { cancelled = true }
   }, [sec, username, currentUser, storeTick])
 
-  const baseItems =
-    sec === 'pkm'
-      ? (pkmItems ?? [])
-      : allContent.filter(c => {
-          if (!matchesSection(c, sec)) return false
-          if (c.author !== username) return false
-          if (!isOwner && c.visibility !== 'public') return false
-          return true
-        })
+  const baseItems = items_ ?? []
 
   // A folder or series is itself metadata: its name and description would leak
   // the shape of a private library. A guest only sees ones that actually hold
@@ -236,37 +228,41 @@ export default function ContentListPage({ section }: ContentListPageProps) {
     navigate(currentUser ? target : loginUrlFor(target))
   }
 
-  function handleQuickThoughtSubmit(e: React.FormEvent) {
+  async function handleQuickThoughtSubmit(e: React.FormEvent) {
     e.preventDefault()
     const text = quickText.trim()
     if (!text) {
       alert('请先写下一段随想')
       return
     }
-    const now = new Date().toISOString()
-    addContentItem({
-      id: nextId('c'),
-      slug: makeUniqueSlug(`thought-${Date.now()}`),
-      type: 'thought',
-      thoughtType: quickThoughtType,
-      title: text,
-      body: quickThoughtType === 'excerpt'
-        ? `> ${text}${quickSourceAuthor.trim() ? `\n\n作者或说话者：${quickSourceAuthor.trim()}` : ''}${quickSourceTitle.trim() ? `\n\n作品：${quickSourceTitle.trim()}` : ''}`
-        : text,
-      summary: text.slice(0, 60),
-      visibility: 'private',
-      tags: [],
-      createdAt: now,
-      updatedAt: now,
-      publishedAt: now,
-      author: username ?? 'euan',
-      ...(quickThoughtType === 'excerpt'
-        ? {
-            sourceAuthor: quickSourceAuthor.trim() || undefined,
-            sourceTitle: quickSourceTitle.trim() || undefined,
-          }
-        : {}),
-    })
+
+    // Through the data layer like every other write. Writing to the store here
+    // meant a quick thought vanished on reload once a backend was configured.
+    try {
+      await createPkm(currentUser ?? username ?? 'euan', {
+        type: 'thought',
+        title: text,
+        body: quickThoughtType === 'excerpt'
+          ? `> ${text}${quickSourceAuthor.trim() ? `\n\n作者或说话者：${quickSourceAuthor.trim()}` : ''}${quickSourceTitle.trim() ? `\n\n作品：${quickSourceTitle.trim()}` : ''}`
+          : text,
+        summary: text.slice(0, 60),
+        visibility: 'private',
+        tagNames: [],
+        folderIds: [],
+        seriesIds: [],
+        thoughtType: quickThoughtType,
+        ...(quickThoughtType === 'excerpt'
+          ? {
+              sourceAuthor: quickSourceAuthor.trim() || undefined,
+              sourceTitle: quickSourceTitle.trim() || undefined,
+            }
+          : {}),
+      })
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '保存失败，请重试。')
+      return
+    }
+
     quickAutosave.discard()
     setQuickText('')
     setQuickSourceTitle('')
@@ -348,7 +344,7 @@ export default function ContentListPage({ section }: ContentListPageProps) {
 
         {/* Quick capture (thoughts, owner only) */}
         {sec === 'thoughts' && isOwner && (
-          <form onSubmit={handleQuickThoughtSubmit} className="mb-10 border-b border-[color:var(--border)] pb-8">
+          <form onSubmit={e => void handleQuickThoughtSubmit(e)} className="mb-10 border-b border-[color:var(--border)] pb-8">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               {(['original', 'excerpt'] as ThoughtType[]).map(type => (
                 <button

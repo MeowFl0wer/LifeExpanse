@@ -69,9 +69,11 @@ describe('ContentListPage guest visibility', () => {
     expect(screen.queryByText('作者没有公开任何日记哦～')).toBeNull()
   })
 
-  it('shows public content to a guest', () => {
+  // Diary is served by the data layer now, so the list arrives asynchronously.
+  it('shows public content to a guest', async () => {
     renderSection('diary')
-    expect(screen.getByText('东京转机，三个小时的候机室')).toBeTruthy()
+    await waitFor(() =>
+      expect(screen.getByText('东京转机，三个小时的候机室')).toBeTruthy())
   })
 
   it('offers the quick-capture form only to the owner', () => {
