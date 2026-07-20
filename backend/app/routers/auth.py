@@ -9,7 +9,7 @@ from ..db import get_db
 from ..models import AuditLog, SessionToken, User, utcnow
 from ..schemas import (
     ChangeEmailIn, ChangePasswordIn, EmailOnlyIn, LoginIn, MeOut, RegisterIn,
-    ResetPasswordIn, UserOut,
+    RemoveBackupEmailIn, ResetPasswordIn, SetBackupEmailIn, UserOut,
 )
 from ..security import (
     SESSION_COOKIE, create_session, current_user, hash_password, revoke_session, verify_password,
@@ -158,7 +158,15 @@ def login(payload: LoginIn, request: Request, response: Response, db: Session = 
     credential = payload.credential.strip().lower()
     user = db.scalar(
         select(User).where(
-            (func.lower(User.username) == credential) | (func.lower(User.email) == credential)
+            (func.lower(User.username) == credential)
+            | (func.lower(User.email) == credential)
+            # A verified backup address signs in too: if the primary inbox is
+            # gone, being locked out of the account would be the whole problem
+            # a backup address exists to prevent.
+            | (
+                (func.lower(User.backup_email) == credential)
+                & User.backup_email_verified.is_(True)
+            )
         )
     )
     # One message for both cases, so it cannot be used to enumerate accounts.
@@ -294,6 +302,94 @@ def request_new_email_code(payload: EmailOnlyIn, user: User = Depends(current_us
     return {"detail": "如果该邮箱可以使用，我们已发送验证码"}
 
 
+# --------------------------------------------------------------------------
+# Backup email
+#
+# A second address that can recover the account and sign in. That makes it a
+# second door, so binding one is guarded exactly like changing the primary.
+# --------------------------------------------------------------------------
+
+@router.post("/email/backup/code")
+def request_backup_email_code(
+    payload: EmailOnlyIn, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    address = acc.normalise_email(payload.email)
+    # Neutral: an address already in use gets no code but the same answer, so
+    # this cannot be used to test whether someone has an account.
+    if not acc.email_taken(db, address, excluding_user_id=user.id):
+        acc.issue_code(db, address, "change_email")
+    return {"detail": "如果该邮箱可以使用，我们已发送验证码"}
+
+
+@router.post("/email/backup")
+def set_backup_email(
+    payload: SetBackupEmailIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "当前密码不正确")
+
+    _verify_step_up(db, user, payload.email_code, payload.totp_code, "change_email")
+
+    address = acc.normalise_email(payload.backup_email)
+    if address == acc.normalise_email(user.email):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "备用邮箱不能和主邮箱相同")
+
+    if not acc.consume_code(db, address, "change_email", payload.backup_email_code):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "备用邮箱验证码不正确或已过期")
+    if acc.email_taken(db, address, excluding_user_id=user.id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "备用邮箱验证码不正确或已过期")
+
+    user.backup_email = address
+    user.backup_email_verified = True
+    db.add(AuditLog(actor=user.username, event="backup_email_set"))
+    db.commit()
+
+    # The primary address is told, for the same reason it is told about a
+    # primary change: a new way in should never appear silently.
+    mailer.send_email(
+        to=user.email,
+        subject="LifeExpanse 已绑定备用邮箱",
+        body=(
+            f"你的账号刚刚绑定了备用邮箱：{acc.mask_email(address)}\n\n"
+            "备用邮箱可以用于登录和找回密码。\n"
+            "如果这不是你本人的操作，请立即修改密码并解绑该邮箱。"
+        ),
+    )
+    return {"detail": "备用邮箱已绑定"}
+
+
+@router.delete("/email/backup")
+def remove_backup_email(
+    payload: RemoveBackupEmailIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if not user.backup_email:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "尚未绑定备用邮箱")
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "当前密码不正确")
+
+    _verify_step_up(db, user, payload.email_code, payload.totp_code, "change_email")
+
+    removed = user.backup_email
+    user.backup_email = None
+    user.backup_email_verified = False
+    db.add(AuditLog(actor=user.username, event="backup_email_removed"))
+    db.commit()
+
+    mailer.send_email(
+        to=user.email,
+        subject="LifeExpanse 已解绑备用邮箱",
+        body=(
+            f"你的账号刚刚解绑了备用邮箱：{acc.mask_email(removed)}\n\n"
+            "如果这不是你本人的操作，请立即修改密码。"
+        ),
+    )
+    return {"detail": "备用邮箱已解绑"}
+
+
 @router.post("/email/change")
 def change_email(
     payload: ChangeEmailIn,
@@ -312,6 +408,9 @@ def change_email(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "新邮箱验证码不正确或已过期")
     if acc.email_taken(db, new_address, excluding_user_id=user.id):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "新邮箱验证码不正确或已过期")
+
+    if user.backup_email and acc.normalise_email(user.backup_email) == new_address:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "新邮箱不能和备用邮箱相同")
 
     old_address = user.email
     user.email = new_address

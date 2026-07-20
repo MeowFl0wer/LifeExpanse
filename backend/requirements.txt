@@ -8,3 +8,4 @@ PyJWT>=2.8
 python-multipart>=0.0.9
 cryptography>=43.0
 pyotp>=2.9
+alembic>=1.13

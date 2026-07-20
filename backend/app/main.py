@@ -6,7 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .bootstrap import ensure_admin
 from .config import get_settings
-from .db import Base, SessionLocal, engine
+from .db import SessionLocal
+from .migrate import run_migrations
 from .routers import admin, auth, comments, content, drafts, library, trash, twofactor
 
 settings = get_settings()
@@ -20,9 +21,13 @@ async def lifespan(_: FastAPI):
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    # Fine for SQLite and a single-owner deployment. A migration tool (Alembic)
-    # should replace this before the schema changes under real data.
-    Base.metadata.create_all(bind=engine)
+    # Alembic owns the schema. `create_all` used to run here, which was fine
+    # while nothing was stored but would have meant wiping the database on
+    # every schema change once it was.
+    #
+    # Running the upgrade at startup keeps a single-container deployment to one
+    # command. It is safe to re-run: Alembic applies only what is missing.
+    run_migrations()
     with SessionLocal() as db:
         ensure_admin(db)
     yield

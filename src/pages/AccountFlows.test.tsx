@@ -229,6 +229,40 @@ describe('security settings', () => {
     await waitFor(() => expect(pw.getByText('密码已修改')).toBeTruthy())
   })
 
+  it('binds a backup email with both codes', async () => {
+    const user = userEvent.setup()
+    renderSecurity()
+    await waitFor(() => expect(screen.getByText('未开启')).toBeTruthy())
+
+    const bk = section('备用邮箱')
+    await user.type(bk.getByLabelText('当前密码'), 'demo123456')
+    await user.type(bk.getByLabelText('备用邮箱'), 'spare@example.com')
+    await user.click(bk.getByRole('button', { name: '发送验证码' }))
+    await user.type(bk.getByLabelText('备用邮箱验证码'), '123456')
+    await user.click(bk.getByRole('button', { name: '发送到主邮箱' }))
+    await user.type(bk.getByLabelText('邮箱验证码'), '123456')
+    await user.click(bk.getByRole('button', { name: '绑定备用邮箱' }))
+
+    await waitFor(() => expect(screen.getByText('备用邮箱已绑定')).toBeTruthy())
+    // Shown masked once bound, like every other address on screen.
+    expect(screen.getByText('s***e@example.com')).toBeTruthy()
+  })
+
+  it('will not bind a backup email without the second proof', async () => {
+    const user = userEvent.setup()
+    renderSecurity()
+    await waitFor(() => expect(screen.getByText('未开启')).toBeTruthy())
+
+    const bk = section('备用邮箱')
+    await user.type(bk.getByLabelText('当前密码'), 'demo123456')
+    await user.type(bk.getByLabelText('备用邮箱'), 'spare@example.com')
+    await user.click(bk.getByRole('button', { name: '发送验证码' }))
+    await user.type(bk.getByLabelText('备用邮箱验证码'), '123456')
+    await user.click(bk.getByRole('button', { name: '绑定备用邮箱' }))
+
+    await waitFor(() => expect(bk.getByText('需要邮箱验证码或两步验证码')).toBeTruthy())
+  })
+
   it('shows recovery codes exactly once when enabling 2FA', async () => {
     const user = userEvent.setup()
     renderSecurity()
