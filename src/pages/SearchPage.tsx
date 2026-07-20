@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import ContentCard from '../components/ContentCard'
-import { allContent, trajectoryEntries, footprintCities } from '../mockData'
+import { trajectoryEntries, footprintCities } from '../mockData'
+import { listAllVisible } from '../api/pkm'
+import { SITE_OWNER } from '../lib/site'
 import { useCurrentUser } from '../auth'
 import type { ContentItem, Visibility } from '../types'
 
@@ -29,12 +31,21 @@ export default function SearchPage() {
 
   const query = (searchParams.get('q') ?? '').trim().toLowerCase()
 
-  // Ch 16: results must respect permissions. Private and draft content is only
-  // ever visible to its own author; a visitor sees public content only.
-  const visibleContent = useMemo(
-    () => allContent.filter(item => item.visibility === 'public' || item.author === currentUser),
-    [currentUser]
-  )
+  // Ch 16: results must respect permissions — and the rule is applied in the
+  // data layer, not here. Filtering `allContent` in this component meant the
+  // rule had a second home that could drift, and that server-side content
+  // never appeared in search at all.
+  const [visibleContent, setVisibleContent] = useState<ContentItem[]>([])
+  useEffect(() => {
+    let cancelled = false
+    // Scoped to the site owner: that is whose content the public pages show,
+    // and the server needs an author to scope by. Cross-user search would
+    // need a global endpoint the backend does not have yet.
+    listAllVisible(SITE_OWNER, currentUser)
+      .then(items => { if (!cancelled) setVisibleContent(items) })
+      .catch(() => { if (!cancelled) setVisibleContent([]) })
+    return () => { cancelled = true }
+  }, [currentUser])
 
   const allTags = useMemo(
     () => Array.from(new Set(visibleContent.flatMap(c => c.tags.map(t => t.name)))).sort(),

@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import {
-  getTrash, restoreContentItem, purgeContentItem, emptyTrash, purgeExpiredTrash,
-} from '../mockData'
+  listTrash, restoreFromTrash, purgeFromTrash, emptyTrashFor, sweepExpiredTrash,
+  type TrashEntry,
+} from '../api/trash'
 import { retentionLabel, isExpired, TRASH_RETENTION_DAYS } from '../lib/trash'
 import { useCurrentUser } from '../auth'
 import type { ContentItem } from '../types'
@@ -27,47 +28,70 @@ function formatDate(value: string): string {
 
 export default function TrashPage() {
   const currentUser = useCurrentUser()
-  const [, bump] = useState(0)
+  const [tick, bump] = useState(0)
   const [notice, setNotice] = useState('')
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [confirmingEmpty, setConfirmingEmpty] = useState(false)
 
-  // Anything past its window is gone on arrival, so the bin never shows an
-  // item the retention policy says should already have been cleared.
+  // Everything here goes through the data layer, which owns the "only your
+  // own content" rule. Calling the store from this page meant that rule had a
+  // second home, and that nothing was persisted once a backend was configured.
+  const [entries, setEntries] = useState<TrashEntry[]>([])
+
   useEffect(() => {
-    purgeExpiredTrash()
-    bump(n => n + 1)
-  }, [])
+    if (!currentUser) { setEntries([]); return }
+    let cancelled = false
+    void (async () => {
+      // Anything past its window is gone on arrival, so the bin never shows an
+      // item the retention policy says should already have been cleared.
+      await sweepExpiredTrash()
+      const rows = await listTrash(currentUser)
+      if (!cancelled) setEntries(rows)
+    })()
+    return () => { cancelled = true }
+  }, [currentUser, tick])
 
-  const entries = currentUser ? getTrash(currentUser) : []
-
-  function handleRestore(id: string, title: string) {
-    restoreContentItem(id)
-    setNotice(`已恢复「${title}」。`)
-    bump(n => n + 1)
+  async function handleRestore(id: string, title: string) {
+    try {
+      await restoreFromTrash(id, currentUser!)
+      setNotice(`已恢复「${title}」。`)
+      bump(n => n + 1)
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : '恢复失败，请稍后重试。')
+    }
   }
 
-  function handlePurge(id: string, title: string) {
+  async function handlePurge(id: string, title: string) {
     if (!window.confirm(`彻底删除「${title}」？\n\n这一步无法撤销，内容不会再出现在回收站里。`)) {
       setConfirmingId(null)
       return
     }
-    purgeContentItem(id)
-    setConfirmingId(null)
-    setNotice(`已彻底删除「${title}」。`)
-    bump(n => n + 1)
+    try {
+      await purgeFromTrash(id, currentUser!)
+      setConfirmingId(null)
+      setNotice(`已彻底删除「${title}」。`)
+      bump(n => n + 1)
+    } catch (err) {
+      setConfirmingId(null)
+      setNotice(err instanceof Error ? err.message : '删除失败，请稍后重试。')
+    }
   }
 
-  function handleEmpty() {
+  async function handleEmpty() {
     if (!currentUser) return
     if (!window.confirm(`清空回收站会彻底删除 ${entries.length} 条内容。\n\n这一步无法撤销。`)) {
       setConfirmingEmpty(false)
       return
     }
-    emptyTrash(currentUser)
-    setConfirmingEmpty(false)
-    setNotice('回收站已清空。')
-    bump(n => n + 1)
+    try {
+      await emptyTrashFor(currentUser)
+      setConfirmingEmpty(false)
+      setNotice('回收站已清空。')
+      bump(n => n + 1)
+    } catch (err) {
+      setConfirmingEmpty(false)
+      setNotice(err instanceof Error ? err.message : '清空失败，请稍后重试。')
+    }
   }
 
   return (
@@ -96,7 +120,7 @@ export default function TrashPage() {
                 >
                   取消
                 </button>
-                <button type="button" onClick={handleEmpty} className="text-xs font-medium text-[#B23B3B] hover:underline">
+                <button type="button" onClick={() => void handleEmpty()} className="text-xs font-medium text-[#B23B3B] hover:underline">
                   确认清空
                 </button>
               </span>
@@ -156,7 +180,7 @@ export default function TrashPage() {
                     <div className="flex shrink-0 flex-wrap items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => handleRestore(item.id, item.title)}
+                        onClick={() => void handleRestore(item.id, item.title)}
                         className="life-button text-xs"
                       >
                         恢复
@@ -173,7 +197,7 @@ export default function TrashPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handlePurge(item.id, item.title)}
+                            onClick={() => void handlePurge(item.id, item.title)}
                             className="text-xs font-medium text-[#B23B3B] hover:underline"
                           >
                             确认彻底删除

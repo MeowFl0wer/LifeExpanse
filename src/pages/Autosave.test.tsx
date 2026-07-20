@@ -7,7 +7,7 @@ import ContentEditPage from './ContentEditPage'
 import { setCurrentUser, clearCurrentUser } from '../auth'
 import { loadDraft, createKey, editKey } from '../api/drafts'
 import { createPkm } from '../api/pkm'
-import { allContent, trashedItems } from '../mockData'
+import { allContent, trashedItems } from '../api/store'
 
 const made: string[] = []
 

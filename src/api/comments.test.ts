@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { listComments, addComment, removeComment } from './comments'
 import { createPkm, publishAsArticle, revertToNote, updatePkm } from './pkm'
-import { articleComments } from '../mockData'
+import { articleComments } from './store'
 
 function draft(title: string) {
   return {

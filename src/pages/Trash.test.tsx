@@ -12,7 +12,7 @@ import { setCurrentUser, clearCurrentUser } from '../auth'
 import {
   allContent, trashedItems, addContentItem, addFolder, folders,
   deleteContentItem, restoreContentItem, getTrash, purgeExpiredTrash, emptyTrash,
-} from '../mockData'
+} from '../api/store'
 import type { ContentItem } from '../types'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -167,16 +167,16 @@ describe('newly created content reaches the shared pages', () => {
     resetStore(created.splice(0))
   })
 
-  it('appears on the public homepage', () => {
+  it('appears on the public homepage', async () => {
     const item = seed({ type: 'diary', contentKind: undefined, title: '刚写的公开日记', visibility: 'public' })
     created.push(item.id)
 
     render(<MemoryRouter initialEntries={['/']}><HomePage /></MemoryRouter>)
 
-    expect(screen.getByText('刚写的公开日记')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('刚写的公开日记')).toBeTruthy())
   })
 
-  it('appears in the workspace recent list', () => {
+  it('appears in the workspace recent list', async () => {
     const item = seed({
       title: '刚写的笔记',
       createdAt: new Date().toISOString(),
@@ -185,7 +185,7 @@ describe('newly created content reaches the shared pages', () => {
 
     render(<MemoryRouter initialEntries={['/app']}><AppDashboard /></MemoryRouter>)
 
-    expect(screen.getByText('刚写的笔记')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('刚写的笔记')).toBeTruthy())
   })
 })
 
@@ -285,14 +285,14 @@ describe('trash page', () => {
     return render(<MemoryRouter initialEntries={['/trash']}><TrashPage /></MemoryRouter>)
   }
 
-  it('lists a deleted item with how long it has left', () => {
+  it('lists a deleted item with how long it has left', async () => {
     const item = seed({ title: '在回收站里的笔记' })
     created.push(item.id)
     deleteContentItem(item.id)
 
     renderTrash()
 
-    expect(screen.getByText('在回收站里的笔记')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('在回收站里的笔记')).toBeTruthy())
     expect(screen.getByText(/天后清理|今天到期/)).toBeTruthy()
   })
 
@@ -303,9 +303,10 @@ describe('trash page', () => {
     deleteContentItem(item.id)
 
     renderTrash()
+    await waitFor(() => expect(screen.getByRole('button', { name: '恢复' })).toBeTruthy())
     await user.click(screen.getByRole('button', { name: '恢复' }))
 
-    expect(allContent.some(c => c.id === item.id)).toBe(true)
+    await waitFor(() => expect(allContent.some(c => c.id === item.id)).toBe(true))
     expect(screen.getByText(/已恢复/)).toBeTruthy()
   })
 
@@ -317,12 +318,13 @@ describe('trash page', () => {
     deleteContentItem(item.id)
 
     renderTrash()
+    await waitFor(() => expect(screen.getByRole('button', { name: '彻底删除' })).toBeTruthy())
     await user.click(screen.getByRole('button', { name: '彻底删除' }))
     // Still there after the first step.
     expect(trashedItems.some(t => t.item.id === item.id)).toBe(true)
 
     await user.click(screen.getByRole('button', { name: '确认彻底删除' }))
-    expect(trashedItems.some(t => t.item.id === item.id)).toBe(false)
+    await waitFor(() => expect(trashedItems.some(t => t.item.id === item.id)).toBe(false))
   })
 
   it('keeps the item if the final confirm is declined', async () => {
@@ -333,6 +335,7 @@ describe('trash page', () => {
     deleteContentItem(item.id)
 
     renderTrash()
+    await waitFor(() => expect(screen.getByRole('button', { name: '彻底删除' })).toBeTruthy())
     await user.click(screen.getByRole('button', { name: '彻底删除' }))
     await user.click(screen.getByRole('button', { name: '确认彻底删除' }))
 

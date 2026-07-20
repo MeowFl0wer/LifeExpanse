@@ -1,8 +1,11 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import PublicHeader from '../components/PublicHeader'
 import Footer from '../components/Footer'
 import RunningClock from '../components/RunningClock'
-import { siteStats, allContent } from '../mockData'
+import { siteStats } from '../mockData'
+import { countPublic } from '../api/pkm'
+import { SITE_OWNER } from '../lib/site'
 
 const APP_VERSION = 'v0.1.0'
 
@@ -45,7 +48,16 @@ const modules = [
 ]
 
 export default function AboutPage() {
-  const publicCount = allContent.filter(c => c.visibility === 'public').length
+  // Through the data layer, so the count reflects what a visitor can actually
+  // see — and so server-side content is included.
+  const [publicCount, setPublicCount] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    countPublic(SITE_OWNER)
+      .then(n => { if (!cancelled) setPublicCount(n) })
+      .catch(() => { if (!cancelled) setPublicCount(0) })
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <div className="life-page flex min-h-screen flex-col">

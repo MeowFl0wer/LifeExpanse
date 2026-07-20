@@ -6,7 +6,7 @@ import {
   addContentItem, updateContentItem, deleteContentItem, makeUniqueSlug, nextId,
   addFolder, updateFolder, deleteFolder,
   addSeries, updateSeries, deleteSeries,
-} from '../mockData'
+} from './store'
 import { normaliseMembership } from '../lib/library'
 import { backlinksTo, outgoingLinks, unresolvedLinks } from '../lib/wikilink'
 import { slugify } from '../lib/slug'
@@ -430,4 +430,62 @@ export async function removeSeries(id: string, actor: string): Promise<{ detache
   }
   deleteSeries(id)
   return ok({ detachedFolders: childFolders.length, detachedItems: affected.length })
+}
+
+/* ---- Cross-type reads ---- */
+
+/**
+ * Every piece of content the viewer may see, across all types.
+ *
+ * Search and the dashboard need this. Doing it here rather than filtering
+ * `allContent` in a component is the whole point of the layer: the permission
+ * rule is applied once, and a page cannot forget it.
+ */
+export async function listAllVisible(
+  author: string,
+  viewer: string | null
+): Promise<ContentItem[]> {
+  if (usingBackend()) {
+    // `author` is required by the server and is not the viewer: passing the
+    // viewer meant a guest sent an empty author (404, so search came back
+    // empty) and a signed-in user only ever searched their own content.
+    const perType = await Promise.all(
+      (['thought', 'diary', 'pkm'] as const).map(type =>
+        // Visibility is applied server side from the session cookie.
+        remote.listPkm({ author, viewer, type, includeArchived: false })
+      )
+    )
+    return perType.flat()
+  }
+  return ok(allContent.filter(c => c.author === author && visibleTo(c, viewer)))
+}
+
+/** How many items of a type an author has that the viewer may see. */
+export async function countByType(
+  type: ContentItem['type'],
+  author: string,
+  viewer: string | null
+): Promise<number> {
+  const items = await listPkm({ author, viewer, type })
+  return items.length
+}
+
+/** The viewer's most recently created content across types, newest first. */
+export async function recentVisible(
+  limit: number,
+  author: string,
+  viewer: string | null
+): Promise<ContentItem[]> {
+  const all = await listAllVisible(author, viewer)
+  return all
+    .filter(c => c.author === author && c.visibility !== 'draft')
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, limit)
+}
+
+/** Count of an author's public content. Used by the About and 我的 pages. */
+export async function countPublic(author: string): Promise<number> {
+  // `viewer: null` so this is what a visitor would actually see.
+  const all = await listAllVisible(author, null)
+  return all.filter(c => c.visibility === 'public').length
 }

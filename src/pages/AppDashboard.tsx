@@ -1,7 +1,12 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import ContentCard from '../components/ContentCard'
-import { countOfType, recentContent, getTrash, flightRecords, footprintCities, generateHeatmapData } from '../mockData'
+import { flightRecords, footprintCities, generateHeatmapData } from '../mockData'
+import { countByType, recentVisible } from '../api/pkm'
+import { SITE_OWNER } from '../lib/site'
+import { listTrash } from '../api/trash'
+import type { ContentItem } from '../types'
 import { useCurrentUser } from '../auth'
 
 const heatmapData = generateHeatmapData()
@@ -41,21 +46,41 @@ function SectionTitle({ title, desc }: { title: string; desc?: string }) {
 }
 
 export default function AppDashboard() {
-  const currentUser = useCurrentUser() ?? 'euan'
+  const currentUser = useCurrentUser() ?? SITE_OWNER
 
-  // Derived per render from the live store, so creations show up and deleted
-  // items drop out without this page needing to know about either.
+  // Through the data layer, so the permission rule is applied once and
+  // server-side content is counted too.
+  const [counts, setCounts] = useState({ thought: 0, diary: 0, pkm: 0 })
+  const [recent, setRecent] = useState<ContentItem[]>([])
+  const [trashCount, setTrashCount] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const [thought, diary, pkm, latest, bin] = await Promise.all([
+        countByType('thought', currentUser, currentUser),
+        countByType('diary', currentUser, currentUser),
+        countByType('pkm', currentUser, currentUser),
+        recentVisible(5, currentUser, currentUser),
+        listTrash(currentUser),
+      ])
+      if (cancelled) return
+      setCounts({ thought, diary, pkm })
+      setRecent(latest)
+      setTrashCount(bin.length)
+    })()
+    return () => { cancelled = true }
+  }, [currentUser])
+
   const modules = [
-    { label: '随想', to: '/euan/thoughts', count: countOfType('thought', currentUser), note: '短句和摘录' },
-    { label: '日记', to: '/euan/diary', count: countOfType('diary', currentUser), note: '按日期记录' },
-    { label: '笔记与文章', to: '/euan/pkm', count: countOfType('pkm', currentUser), note: '笔记和公开文章' },
+    { label: '随想', to: '/euan/thoughts', count: counts.thought, note: '短句和摘录' },
+    { label: '日记', to: '/euan/diary', count: counts.diary, note: '按日期记录' },
+    { label: '笔记与文章', to: '/euan/pkm', count: counts.pkm, note: '笔记和公开文章' },
     { label: '人生轨迹', to: '/euan/trajectory', count: 310, note: '时间和地点' },
     { label: '城市足迹', to: '/euan/map', count: footprintCities.length, note: '到访城市' },
     { label: '飞行记录', to: '/euan/flights', count: flightRecords.length, note: '航班和里程' },
     { label: '加密空间', to: '/euan/space', count: 2, note: '私密内容' },
   ]
-  const recent = recentContent(5, { author: currentUser })
-  const trashCount = getTrash(currentUser).length
 
   const todayHasDiary = false
   const monthDays = 14

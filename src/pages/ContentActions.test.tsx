@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import ContentDetailPage from './ContentDetailPage'
 import ContentCreatePage from './ContentCreatePage'
 import { setCurrentUser, clearCurrentUser } from '../auth'
-import { allContent, addContentItem } from '../mockData'
+import { allContent, addContentItem } from '../api/store'
 import type { ContentItem } from '../types'
 
 function seedItem(overrides: Partial<ContentItem> = {}): ContentItem {

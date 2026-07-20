@@ -7,7 +7,7 @@ import ContentEditPage from './ContentEditPage'
 import ContentListPage from './ContentListPage'
 import { setCurrentUser, clearCurrentUser } from '../auth'
 import { createPkm, createFolder, createSeriesEntry } from '../api/pkm'
-import { allContent, folders, series, trashedItems } from '../mockData'
+import { allContent, folders, series, trashedItems } from '../api/store'
 
 const madeContent: string[] = []
 const madeFolders: string[] = []

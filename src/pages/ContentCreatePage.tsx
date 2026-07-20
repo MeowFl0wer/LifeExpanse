@@ -270,9 +270,11 @@ export default function ContentCreatePage() {
         ...extractHashTags(body),
       ])
     )
-    const tags = tagNames.map(name => ({ id: nextId('tag'), name }))
-
     if (createType === 'trajectory') {
+      // Trajectory is not on the data layer yet, so it still builds its own
+      // rows. Content does not: it passes `tagNames` and the data layer
+      // allocates the ids.
+      const tags = tagNames.map(name => ({ id: nextId('tag'), name }))
       addTrajectoryEntry({
         id: nextId('tr'),
         date: trajDate,
@@ -313,7 +315,7 @@ export default function ContentCreatePage() {
         title: title.trim() || body.trim().slice(0, 30),
         body: body.trim(),
         visibility,
-        tagNames: tags.map(t => t.name),
+        tagNames,
         folderIds,
         seriesIds,
         ...(type === 'pkm' ? { contentKind } : {}),

@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom'
 import AppHeader from '../components/AppHeader'
 import { maskEmail } from '../lib/mask'
 import { currentBackupEmail } from '../api/account'
+import { countPublic } from '../api/pkm'
 import { useCurrentUser } from '../auth'
 import {
-  euanProfile, allContent, trajectoryEntries,
+  euanProfile, trajectoryEntries,
   footprintCities, flightRecords, encryptedSpaces, storageStats,
 } from '../mockData'
 
@@ -53,7 +54,14 @@ export default function MePage() {
     return () => { cancelled = true }
   }, [])
 
-  const publicCount = allContent.filter(c => c.visibility === 'public').length
+  const [publicCount, setPublicCount] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    countPublic(currentUser ?? profile.username)
+      .then(n => { if (!cancelled) setPublicCount(n) })
+      .catch(() => { if (!cancelled) setPublicCount(0) })
+    return () => { cancelled = true }
+  }, [currentUser, profile.username])
   const totalDistance = flightRecords.reduce((s, f) => s + f.distance, 0)
   const countryCount = new Set(footprintCities.map(c => c.country)).size
   const storagePct = Math.round((storageStats.usedMb / storageStats.limitMb) * 100)
