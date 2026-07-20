@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { getCurrentUser, setCurrentUser, clearCurrentUser, isLoggedIn, isAdmin, isOwnerOf } from './auth'
+import {
+  getCurrentUser, setCurrentUser, setCurrentRole, clearCurrentUser,
+  isLoggedIn, isAdmin, isOwnerOf,
+} from './auth'
 
 describe('session store', () => {
   beforeEach(() => {
@@ -44,10 +47,31 @@ describe('session store', () => {
     expect(isLoggedIn()).toBe(false)
   })
 
-  it('treats the site owner as admin and nobody else', () => {
+  // The site owner used to count as the admin. It no longer does: the owner
+  // is an ordinary account with a content space, and the admin is separate
+  // (需求 3.1), so a compromised admin login does not also expose the diary.
+  it('does not treat the site owner as an admin', () => {
     setCurrentUser('euan')
-    expect(isAdmin()).toBe(true)
+    expect(isAdmin()).toBe(false)
     setCurrentUser('alice')
+    expect(isAdmin()).toBe(false)
+  })
+
+  it('follows the role the server reported', () => {
+    setCurrentUser('AdminEuan')
+    setCurrentRole('admin')
+    expect(isAdmin()).toBe(true)
+
+    // The role wins over the name, so renaming the admin account does not
+    // silently break the check.
+    setCurrentRole('user')
+    expect(isAdmin()).toBe(false)
+  })
+
+  it('stops claiming admin once signed out', () => {
+    setCurrentUser('AdminEuan')
+    setCurrentRole('admin')
+    clearCurrentUser()
     expect(isAdmin()).toBe(false)
   })
 

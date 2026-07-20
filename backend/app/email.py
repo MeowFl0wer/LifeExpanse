@@ -41,7 +41,11 @@ def send_email(to: str, subject: str, body: str) -> None:
         return
 
     outbox.append(message)
-    log.info("email to=%s subject=%s\n%s", to, subject, body)
+    log.warning(
+        "[console email] to=%s subject=%s\n%s\n"
+        "(此后端把邮件写进日志，仅用于开发；生产请设置 LIFE_EMAIL_BACKEND=resend)",
+        to, subject, body,
+    )
 
 
 def _send_via_resend(message: SentMessage) -> None:  # pragma: no cover - needs network

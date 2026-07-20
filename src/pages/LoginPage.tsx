@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Logo from '../components/Logo'
-import { setCurrentUser } from '../auth'
+import { setCurrentUser, setCurrentRole } from '../auth'
 import { login as apiLogin, TwoFactorRequired } from '../api/auth'
 import { safeNextPath } from '../lib/redirect'
 
@@ -60,6 +60,7 @@ export default function LoginPage() {
       const account = await apiLogin(credential, password, remember, totpCode || undefined)
       if (!mounted.current) return
       setCurrentUser(account.username, { remember })
+      setCurrentRole(account.role)
       setState('success')
       // Brief pause so the success state is visible before leaving.
       redirectTimer.current = window.setTimeout(() => {
