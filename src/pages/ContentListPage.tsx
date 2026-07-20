@@ -511,31 +511,29 @@ export default function ContentListPage({ section }: ContentListPageProps) {
             onEditSeries={setEditingSeries}
             onDeleteFolder={handleDeleteFolder}
             onDeleteSeries={handleDeleteSeries}
-            onSaveSeries={(id, draft) => {
-              void saveSeries(id, currentUser!, {
+            onSaveSeries={async (id, draft) => {
+              await saveSeries(id, currentUser!, {
                 name: draft.name,
                 description: draft.description,
                 cover: draft.cover,
-              }).then(() => {
-                setEditingSeries(false)
-                bumpStore(n => n + 1)
               })
+              setEditingSeries(false)
+              bumpStore(n => n + 1)
             }}
             onShowFolderForm={setShowFolderForm}
             onShowSeriesForm={setShowSeriesForm}
             onEditFolder={setEditingFolder}
             onCreateFolder={handleCreateFolder}
             onCreateSeries={handleCreateSeries}
-            onSaveFolder={(id, draft) => {
-              void saveFolder(id, currentUser!, {
+            onSaveFolder={async (id, draft) => {
+              await saveFolder(id, currentUser!, {
                 name: draft.name,
                 description: draft.description,
                 cover: draft.cover,
                 seriesIds: draft.seriesIds,
-              }).then(() => {
-                setEditingFolder(false)
-                bumpStore(n => n + 1)
               })
+              setEditingFolder(false)
+              bumpStore(n => n + 1)
             }}
           />
         ) : (
@@ -598,13 +596,13 @@ interface LibraryBrowserProps {
   onEditSeries: (v: boolean) => void
   onDeleteFolder: (id: string, name: string) => void
   onDeleteSeries: (id: string, name: string) => void
-  onSaveSeries: (id: string, draft: LibraryItemDraft) => void
+  onSaveSeries: (id: string, draft: LibraryItemDraft) => void | Promise<void>
   onShowFolderForm: (v: boolean) => void
   onShowSeriesForm: (v: boolean) => void
   onEditFolder: (v: boolean) => void
-  onCreateFolder: (draft: LibraryItemDraft) => void
-  onCreateSeries: (draft: LibraryItemDraft) => void
-  onSaveFolder: (id: string, draft: LibraryItemDraft) => void
+  onCreateFolder: (draft: LibraryItemDraft) => void | Promise<void>
+  onCreateSeries: (draft: LibraryItemDraft) => void | Promise<void>
+  onSaveFolder: (id: string, draft: LibraryItemDraft) => void | Promise<void>
 }
 
 function LibraryBrowser({

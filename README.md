@@ -110,35 +110,43 @@ src/
 ├── components/       # 共用组件
 ├── pages/            # 页面
 └── test/setup.ts     # 测试环境
-docs/                 # 需求规格与设计文档
+docs/                 # 需求规格、架构决策记录（DECISIONS.md）与设计文档
+backend/              # FastAPI 后端（见 backend/README.md）
+.github/workflows/    # CI
 public/brand/         # 品牌与主视觉资源
 ```
 
 ### 前后端分离情况
 
-**后端尚不存在；前端正在按模块逐步引入数据层。**
+**后端已存在（FastAPI + SQLAlchemy + SQLite），笔记与文章、评论已接通。**
 
-已完成的模块（笔记与文章）走 `src/api/pkm.ts`：异步接口、权限过滤在数据层完成、
-错误以 `ApiError` 抛出。接入真实后端时只需替换该文件的实现，页面不用改。
+前端通过 `src/api/` 访问数据，每个函数按 `usingBackend()` 分流：
+配了 `VITE_API_BASE` 走 HTTP 实现，否则走内存实现。
+页面调用的函数名和签名两种模式下完全一致，**切换后端不需要改页面**。
 
-其余模块仍直接 `import { allContent } from '../mockData'`。
-计划是每打磨一个模块，就把该模块的数据访问一并迁到 `src/api/`，
-避免一次性大重构，也避免模块打磨得越细、后期返工越大。
+已接通后端：笔记与文章、文件夹与系列、评论、草稿、回收站、登录会话。
+其余模块（随想、日记、轨迹、足迹、飞行、加密空间）仍是内存实现，
+按模块逐步迁移——避免一次性大重构，也避免模块打磨得越细、后期返工越大。
+
+权限由后端强制，前端的同名检查只是原型的镜像，不是安全边界。
+详见 [docs/DECISIONS.md](docs/DECISIONS.md) ADR-001 / ADR-003 / ADR-004。
 
 ### 代码规范情况
 
 **较好的部分**
 - TypeScript `strict` 全开，含 `noUnusedLocals` / `noUnusedParameters`
 - 纯逻辑抽到 `src/lib/`，186 个测试覆盖，可独立验证
-- 权限判断收敛到 `auth.ts`，层级规则收敛到 `lib/library.ts`
+- 权限由后端强制，前端读取统一经过 `src/api/`，页面不直接读存储
+- 层级规则收敛到 `lib/library.ts`（前后端各一份实现，均有测试）
+- CI 在每次 push 和 PR 上跑前后端全部测试，测试不依赖人工记得运行
 - 内容主存储 `allContent` 为唯一读取入口，种子数组不导出（编译期防止读到过期快照）
 
 **待改进的部分**
-- 缺少 API / service 层（见上）
-- `mockData.ts` 约 900 行，同时承担数据与业务逻辑，接入后端时需拆分
+- `mockData.ts` 约 900 行，同时承担数据与业务逻辑，后续随模块迁移逐步瘦身
 - 没有 ESLint（仅有 `oxfmt` 格式化）
 - 部分页面组件偏长（`ContentListPage` 约 600 行），可继续拆分
-- 没有 CI，测试需手动运行
+- 数据库用 `create_all` 建表，上线前需换成 Alembic 迁移
+- 没有 E2E 测试，目前靠一个 13 项的接口脚本手动验证
 
 ---
 

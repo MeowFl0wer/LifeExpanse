@@ -252,6 +252,7 @@ export interface LinkGraph {
 }
 
 export async function getLinkGraph(item: ContentItem, viewer: string | null): Promise<LinkGraph> {
+  if (usingBackend()) return remote.getLinkGraph(item)
   const visible = allContent.filter(c => c.author === item.author && visibleTo(c, viewer))
   return ok({
     outgoing: outgoingLinks(item.body, visible).filter(i => i.id !== item.id),

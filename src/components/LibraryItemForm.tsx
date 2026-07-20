@@ -17,7 +17,8 @@ interface LibraryItemFormProps {
   initial?: Partial<LibraryItemDraft>
   submitLabel: string
   onCancel: () => void
-  onSubmit: (draft: LibraryItemDraft) => void
+  /** May be async — the form waits and shows the failure rather than dropping it. */
+  onSubmit: (draft: LibraryItemDraft) => void | Promise<void>
 }
 
 export default function LibraryItemForm({
@@ -28,6 +29,7 @@ export default function LibraryItemForm({
   const [cover, setCover] = useState<string | undefined>(initial?.cover)
   const [seriesIds, setSeriesIds] = useState<string[]>(initial?.seriesIds ?? [])
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const label = kind === 'folder' ? '文件夹' : '系列'
@@ -43,22 +45,33 @@ export default function LibraryItemForm({
     setCover(URL.createObjectURL(file))
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) {
       setError(`请填写${label}名称`)
       return
     }
-    onSubmit({
-      name: name.trim(),
-      description: description.trim(),
-      cover,
-      seriesIds,
-    })
+    if (saving) return
+    setSaving(true)
+    try {
+      // Saving can reach the network, so a rejection has to land somewhere the
+      // user can see it — otherwise the panel just sits there looking fine.
+      await onSubmit({
+        name: name.trim(),
+        description: description.trim(),
+        cover,
+        seriesIds,
+      })
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `保存${label}失败，请稍后重试`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="life-surface mb-8 p-6">
+    <form onSubmit={e => void handleSubmit(e)} className="life-surface mb-8 p-6">
       <h2 className="text-base font-medium text-[color:var(--foreground)]">{submitLabel}</h2>
 
       <div className="mt-5 flex flex-wrap gap-6">
@@ -149,7 +162,13 @@ export default function LibraryItemForm({
 
       <div className="mt-5 flex justify-end gap-2">
         <button type="button" onClick={onCancel} className="life-button text-sm">取消</button>
-        <button type="submit" className="life-button life-button-primary text-sm">{submitLabel}</button>
+        <button
+          type="submit"
+          disabled={saving}
+          className="life-button life-button-primary text-sm disabled:opacity-60"
+        >
+          {saving ? '保存中…' : submitLabel}
+        </button>
       </div>
     </form>
   )

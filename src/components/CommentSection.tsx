@@ -1,12 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getComments, addComment, nextId } from '../mockData'
+import { listComments, addComment, removeComment } from '../api/comments'
 import { useCurrentUser } from '../auth'
 import type { ArticleComment } from '../types'
 
 interface CommentSectionProps {
   contentId: string
-  /** Article author — can hide or delete comments on their own article. */
+  /** Article author — can remove comments on their own article. */
   contentAuthor: string
   allowComments: boolean
 }
@@ -19,34 +19,56 @@ function formatDateTime(dateStr: string): string {
 
 export default function CommentSection({ contentId, contentAuthor, allowComments }: CommentSectionProps) {
   const currentUser = useCurrentUser()
+  const [comments, setComments] = useState<ArticleComment[]>([])
   const [body, setBody] = useState('')
-  // Comments live in a module-level mock store, so a local counter is what
-  // re-reads them after posting. The value itself is never needed.
-  const [, bumpComments] = useState(0)
   const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
-  const comments = getComments(contentId)
+  // Comments come from the data layer, so with a backend configured they are
+  // the server's and survive a reload on another device.
+  useEffect(() => {
+    let cancelled = false
+    listComments(contentId)
+      .then(rows => { if (!cancelled) setComments(rows) })
+      .catch(() => { if (!cancelled) setComments([]) })
+    return () => { cancelled = true }
+  }, [contentId])
+
   const isContentAuthor = currentUser === contentAuthor
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!currentUser) return
+    if (!currentUser || busy) return
     if (!body.trim()) {
       setNotice('请先写下评论内容')
       return
     }
-    const comment: ArticleComment = {
-      id: nextId('cm'),
-      contentId,
-      author: currentUser,
-      authorDisplayName: currentUser === 'euan' ? 'Euan' : currentUser,
-      body: body.trim(),
-      createdAt: new Date().toISOString(),
+    setBusy(true)
+    try {
+      const created = await addComment(contentId, currentUser, body)
+      setComments(prev => [...prev, created])
+      setBody('')
+      setNotice('')
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : '发表失败，请稍后重试')
+    } finally {
+      setBusy(false)
     }
-    addComment(comment)
-    setBody('')
-    setNotice('')
-    bumpComments(n => n + 1)
+  }
+
+  async function handleDelete(id: string) {
+    if (!currentUser || busy) return
+    setBusy(true)
+    try {
+      await removeComment(contentId, id, currentUser)
+      setComments(prev => prev.filter(c => c.id !== id))
+      setConfirmingId(null)
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : '删除失败，请稍后重试')
+    } finally {
+      setBusy(false)
+    }
   }
 
   if (!allowComments) {
@@ -78,20 +100,36 @@ export default function CommentSection({ contentId, contentAuthor, allowComments
                   </span>
                 )}
                 <time className="text-xs text-[color:var(--muted-foreground)]">{formatDateTime(c.createdAt)}</time>
+
                 {(c.author === currentUser || isContentAuthor) && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      alert(
-                        c.author === currentUser
-                          ? '前端原型：你可以删除自己的评论。'
-                          : '前端原型：文章作者可以隐藏或删除自己文章下的评论。'
-                      )
-                    }
-                    className="ml-auto text-xs text-[color:var(--muted-foreground)] transition-colors hover:text-[color:var(--foreground)]"
-                  >
-                    {c.author === currentUser ? '删除' : '隐藏'}
-                  </button>
+                  confirmingId === c.id ? (
+                    <span className="ml-auto flex items-center gap-2 text-xs">
+                      <span className="text-[color:var(--muted-foreground)]">确定删除？</span>
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(c.id)}
+                        disabled={busy}
+                        className="text-[#B23B3B] hover:underline disabled:opacity-60"
+                      >
+                        删除
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingId(null)}
+                        className="text-[color:var(--muted-foreground)] hover:underline"
+                      >
+                        取消
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingId(c.id)}
+                      className="ml-auto text-xs text-[color:var(--muted-foreground)] transition-colors hover:text-[color:var(--foreground)]"
+                    >
+                      删除
+                    </button>
+                  )
                 )}
               </div>
               <p className="mt-2 text-sm leading-7 text-[color:var(--foreground)]">{c.body}</p>
@@ -102,7 +140,7 @@ export default function CommentSection({ contentId, contentAuthor, allowComments
 
       {/* Ch 11: only registered, logged-in users may comment. */}
       {currentUser ? (
-        <form onSubmit={handleSubmit} className="mt-8">
+        <form onSubmit={e => void handleSubmit(e)} className="mt-8">
           <textarea
             value={body}
             onChange={e => { setBody(e.target.value); setNotice('') }}
@@ -113,7 +151,13 @@ export default function CommentSection({ contentId, contentAuthor, allowComments
           {notice && <p className="mt-2 text-xs text-[#B23B3B]">{notice}</p>}
           <div className="mt-3 flex items-center justify-between gap-4">
             <p className="text-xs text-[color:var(--muted-foreground)]">以 @{currentUser} 的身份发表。</p>
-            <button type="submit" className="life-button life-button-primary text-sm">发表评论</button>
+            <button
+              type="submit"
+              disabled={busy}
+              className="life-button life-button-primary text-sm disabled:opacity-60"
+            >
+              {busy ? '发表中…' : '发表评论'}
+            </button>
           </div>
         </form>
       ) : (

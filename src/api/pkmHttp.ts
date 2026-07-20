@@ -1,6 +1,7 @@
 import { request } from './http'
+import { backlinksTo, outgoingLinks, unresolvedLinks } from '../lib/wikilink'
 import type { ContentItem, ContentKind, Folder, Series, Tag, Visibility } from '../types'
-import type { ListParams, PkmDraft, LibraryDraft } from './pkm'
+import type { ListParams, PkmDraft, LibraryDraft, LinkGraph } from './pkm'
 
 /**
  * Backend-backed implementation of the notes & articles data layer.
@@ -143,6 +144,25 @@ export async function getPkmBySlug(p: {
   slug: string
 }): Promise<ContentItem> {
   return fromWire(await request<WireContent>(`/content/${p.author}/pkm/${p.slug}`))
+}
+
+/**
+ * Wiki links, resolved against what the server says the viewer may read.
+ *
+ * The parsing stays in TypeScript instead of moving into the backend: one
+ * Markdown link parser is easier to keep correct than two, and `lib/wikilink`
+ * is already the tested one. Permissions are still the server's call — the
+ * candidate list comes from `/content`, which filters for the viewer, so a
+ * link to something the viewer cannot read shows up as unresolved rather than
+ * as a title they were not meant to see.
+ */
+export async function getLinkGraph(item: ContentItem): Promise<LinkGraph> {
+  const visible = await listPkm({ author: item.author, viewer: null })
+  return {
+    outgoing: outgoingLinks(item.body, visible).filter(i => i.id !== item.id),
+    backlinks: backlinksTo(item, visible),
+    unresolved: unresolvedLinks(item.body, visible),
+  }
 }
 
 function draftToWire(draft: Partial<PkmDraft>) {
