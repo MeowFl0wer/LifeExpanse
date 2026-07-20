@@ -5,6 +5,50 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+# Schemes an excerpt's source link may use.
+#
+# The frontend refuses anything else at render time, but storing a
+# `javascript:` URL and relying on every future consumer to remember is the
+# wrong shape: an export, a feed, or a template that forgets would hand it
+# straight to a reader. Refusing it at the door means it never exists.
+_ALLOWED_URL_SCHEMES = ("https://", "mailto:")
+
+
+def _validated_source_url(value: str | None) -> str | None:
+    if value is None:
+        return None
+    url = value.strip()
+    if not url:
+        return None
+    # Whitespace and control characters are stripped by browsers when parsing
+    # a scheme, so they cannot be allowed to hide one here either.
+    compact = "".join(ch for ch in url if not ch.isspace() and ord(ch) > 0x20).lower()
+    if not compact.startswith(_ALLOWED_URL_SCHEMES):
+        raise ValueError("来源链接只支持 https:// 或 mailto:")
+    return url
+
+
+def _validated_media_url(value: str | None) -> str | None:
+    """A cover ends up in an `<img src>`, so the same rule applies.
+
+    Stricter than a link: media loads without anyone clicking, and `data:` in
+    the wrong element is a document rather than a picture.
+    """
+    if value is None:
+        return None
+    url = value.strip()
+    if not url:
+        return None
+    compact = "".join(ch for ch in url if not ch.isspace() and ord(ch) > 0x20).lower()
+    # Our own media paths, or https. A leading `//` is protocol-relative and
+    # leaves the site despite the slash.
+    if compact.startswith("//"):
+        raise ValueError("封面地址不合法")
+    if compact.startswith("/") or compact.startswith("https://"):
+        return url
+    raise ValueError("封面只支持站内媒体或 https:// 地址")
+
+
 Visibility = Literal["public", "private", "draft"]
 ContentType = Literal["thought", "diary", "pkm"]
 ContentKind = Literal["note", "article"]
@@ -158,6 +202,16 @@ class ContentIn(BaseModel):
     source_url: str | None = None
     source_locator: str | None = None
 
+    @field_validator("source_url")
+    @classmethod
+    def source_url_scheme(cls, v: str | None) -> str | None:
+        return _validated_source_url(v)
+
+    @field_validator("cover")
+    @classmethod
+    def cover_scheme(cls, v: str | None) -> str | None:
+        return _validated_media_url(v)
+
     @field_validator("body")
     @classmethod
     def body_not_blank(cls, v: str) -> str:
@@ -183,6 +237,23 @@ class ContentPatch(BaseModel):
     allow_comments: bool | None = None
     favorite: bool | None = None
     archived: bool | None = None
+    # Excerpt provenance. Absent here previously, which is why a saved excerpt
+    # could not have its source corrected — the fields simply had nowhere to go.
+    source_author: str | None = None
+    source_title: str | None = None
+    source_type: str | None = None
+    source_url: str | None = None
+    source_locator: str | None = None
+
+    @field_validator("source_url")
+    @classmethod
+    def source_url_scheme(cls, v: str | None) -> str | None:
+        return _validated_source_url(v)
+
+    @field_validator("cover")
+    @classmethod
+    def cover_scheme(cls, v: str | None) -> str | None:
+        return _validated_media_url(v)
 
 
 class LibraryIn(BaseModel):
@@ -190,6 +261,11 @@ class LibraryIn(BaseModel):
     description: str = ""
     cover: str | None = None
     series_ids: list[str] = []
+
+    @field_validator("cover")
+    @classmethod
+    def cover_scheme(cls, v: str | None) -> str | None:
+        return _validated_media_url(v)
 
 
 class FolderOut(BaseModel):

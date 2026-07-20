@@ -139,6 +139,9 @@ def update(
     for field in (
         "body", "summary", "visibility", "content_kind", "thought_type", "category",
         "cover", "seo_title", "seo_description", "favorite", "archived",
+        # Excerpt provenance: an excerpt saved with the wrong source could not
+        # be corrected before, because these never reached the update path.
+        "source_author", "source_title", "source_type", "source_url", "source_locator",
     ):
         if field in data:
             setattr(item, field, data[field])

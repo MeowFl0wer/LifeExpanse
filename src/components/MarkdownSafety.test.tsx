@@ -84,6 +84,58 @@ describe('video is a directive, not markup', () => {
   })
 })
 
+describe('link and media schemes are allowlisted', () => {
+  // Escaping the body does not help here: the anchor is HTML the renderer
+  // builds itself.
+  it('does not make a javascript: link clickable', () => {
+    const container = dom('[点我](javascript:alert(1))')
+    expect(container.querySelector('a')).toBeNull()
+    // The address stays readable — removing it would hide what the author wrote.
+    expect(container.textContent).toContain('javascript:alert(1)')
+  })
+
+  it('does not make a data: link clickable', () => {
+    expect(dom('[x](data:text/html,<script>alert(1)</script>)').querySelector('a')).toBeNull()
+  })
+
+  it('refuses a scheme hidden behind a control character', () => {
+    expect(dom('[x](java\tscript:alert(1))').querySelector('a')).toBeNull()
+  })
+
+  it('still links https and internal routes', () => {
+    expect(dom('[x](https://example.com)').querySelector('a')?.getAttribute('href'))
+      .toBe('https://example.com')
+    expect(dom('[x](/euan/pkm/note)').querySelector('a')?.getAttribute('href'))
+      .toBe('/euan/pkm/note')
+  })
+
+  it('does not render a javascript: image', () => {
+    const container = dom('![x](javascript:alert(1))')
+    expect(container.querySelector('img')).toBeNull()
+  })
+
+  it('does not render a data: image', () => {
+    expect(dom('![x](data:text/html,<script>alert(1)</script>)').querySelector('img')).toBeNull()
+  })
+
+  it('does not render a javascript: video', () => {
+    expect(dom('@[video](javascript:alert(1))').querySelector('video')).toBeNull()
+  })
+
+  it('does not render a protocol-relative image', () => {
+    expect(dom('![x](//evil.example/a.png)').querySelector('img')).toBeNull()
+  })
+
+  it('refuses a hostile wiki link target', () => {
+    const container = render(
+      <MarkdownRenderer content={'[[x]]'} resolveLink={() => ({ href: 'javascript:alert(1)', label: 'x' })} />
+    ).container
+    expect(container.querySelector('a')).toBeNull()
+    // Still shown, just not clickable.
+    expect(container.querySelector('.wikilink')).not.toBeNull()
+  })
+})
+
 describe('ordinary markdown still works', () => {
   it('renders emphasis and headings', () => {
     const container = dom('# 标题\n\n正文有**重点**。')

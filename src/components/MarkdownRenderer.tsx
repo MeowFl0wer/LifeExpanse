@@ -1,6 +1,7 @@
 import { headingId } from '../lib/toc'
 import { parseWikiLinks } from '../lib/wikilink'
 import { downloadUrl, isManagedMedia, thumbnailUrl } from '../lib/mediaUrl'
+import { safeLinkUrl, safeMediaUrl } from '../lib/safeUrl'
 
 export interface WikiLinkTarget {
   /** Where the link should go, or undefined when nothing matches yet. */
@@ -51,8 +52,9 @@ function parseMarkdown(
       // The label and href come from the caller (a note title, a route), not
       // from the already-escaped body, so these still need escaping.
       const label = escapeHtml(hasAlias ? link.display : resolved?.label ?? link.display)
-      const replacement = resolved?.href
-        ? `<a class="wikilink" href="${escapeHtml(resolved.href)}">${label}</a>`
+      const wikiHref = resolved?.href ? safeLinkUrl(resolved.href) : null
+      const replacement = wikiHref
+        ? `<a class="wikilink" href="${escapeHtml(wikiHref)}">${label}</a>`
         : `<span class="wikilink wikilink-missing" title="尚未创建">${label}</span>`
       html = html.split(link.raw).join(replacement)
     }
@@ -99,30 +101,43 @@ function parseMarkdown(
   // reach is not subtle design, it is a missing feature.
   // `@[video](url)` — the editor's own syntax, so inserting a video never
   // requires putting HTML in the body.
-  html = html.replace(/@\[video\]\(([^)\s]+)\)/g, (_full, src: string) => {
-    const poster = isManagedMedia(src) ? ` poster="${thumbnailUrl(src)}"` : ''
+  html = html.replace(/@\[video\]\(([^)\s]+)\)/g, (full, src: string) => {
+    const safe = safeMediaUrl(src)
+    // A source we will not load is shown as the text the author wrote, so
+    // nothing silently disappears from their note.
+    if (safe === null) return full
+    const poster = isManagedMedia(safe) ? ` poster="${thumbnailUrl(safe)}"` : ''
     return (
-      `<video src="${src}"${poster} controls preload="metadata" ` +
+      `<video src="${safe}"${poster} controls preload="metadata" ` +
       `class="life-video"></video>`
     )
   })
 
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_full, alt: string, src: string) => {
-    if (!isManagedMedia(src)) {
-      return `<img src="${src}" alt="${alt}" />`
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (full, alt: string, src: string) => {
+    const safe = safeMediaUrl(src)
+    if (safe === null) return full
+    if (!isManagedMedia(safe)) {
+      return `<img src="${safe}" alt="${alt}" />`
     }
     return (
       `<span class="life-figure">` +
-      `<img src="${thumbnailUrl(src)}" alt="${alt}" loading="lazy" />` +
+      `<img src="${thumbnailUrl(safe)}" alt="${alt}" loading="lazy" />` +
       `<span class="life-figure-actions">` +
-      `<a href="${src}" target="_blank" rel="noopener noreferrer">查看原图</a>` +
-      `<a href="${downloadUrl(src)}" download>下载</a>` +
+      `<a href="${safe}" target="_blank" rel="noopener noreferrer">查看原图</a>` +
+      `<a href="${downloadUrl(safe)}" download>下载</a>` +
       `</span></span>`
     )
   })
 
-  // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+  // Links. The body is escaped, but an anchor is HTML this function builds,
+  // so `[点我](javascript:alert(1))` would otherwise be a working attack.
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (full, label: string, href: string) => {
+    const safe = safeLinkUrl(href)
+    // Left as the author's own text: the address stays readable, it just is
+    // not clickable. Removing it would hide what they wrote.
+    if (safe === null) return full
+    return `<a href="${safe}" target="_blank" rel="noopener noreferrer">${label}</a>`
+  })
 
   // Horizontal rule
   html = html.replace(/^---$/gm, '<hr />')

@@ -125,7 +125,7 @@ export async function listPkm(params: ListParams): Promise<ContentItem[]> {
   const rows = await request<WireContent[]>('/content', {
     query: {
       author: params.author,
-      type: 'pkm',
+      type: params.type ?? 'pkm',
       kind: params.kind,
       visibility: params.visibility,
       keyword: params.keyword,
@@ -167,6 +167,12 @@ export async function getLinkGraph(item: ContentItem): Promise<LinkGraph> {
 
 function draftToWire(draft: Partial<PkmDraft>) {
   return {
+    ...(draft.thoughtType !== undefined ? { thought_type: draft.thoughtType } : {}),
+    ...(draft.sourceAuthor !== undefined ? { source_author: draft.sourceAuthor } : {}),
+    ...(draft.sourceTitle !== undefined ? { source_title: draft.sourceTitle } : {}),
+    ...(draft.sourceType !== undefined ? { source_type: draft.sourceType } : {}),
+    ...(draft.sourceUrl !== undefined ? { source_url: draft.sourceUrl } : {}),
+    ...(draft.sourceLocator !== undefined ? { source_locator: draft.sourceLocator } : {}),
     ...(draft.title !== undefined ? { title: draft.title } : {}),
     ...(draft.body !== undefined ? { body: draft.body } : {}),
     ...(draft.summary !== undefined ? { summary: draft.summary } : {}),
@@ -189,7 +195,9 @@ export async function createPkm(draft: PkmDraft): Promise<ContentItem> {
   return fromWire(
     await request<WireContent>('/content', {
       method: 'POST',
-      body: { type: 'pkm', ...draftToWire(draft) },
+      // The type comes from the draft; hard-coding 'pkm' here was what kept
+      // thoughts and diary entries off this path entirely.
+      body: { type: draft.type ?? 'pkm', ...draftToWire(draft) },
     })
   )
 }

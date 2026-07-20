@@ -12,6 +12,7 @@ import { publishAsArticle, revertToNote, getLinkGraph, getPkmBySlug, deletePkm, 
 import { getContentBySlug, folders as allFolders, series as allSeries } from '../mockData'
 import type { ContentItem } from '../types'
 import { locationTrail } from '../lib/library'
+import { safeLinkUrl } from '../lib/safeUrl'
 import { useCurrentUser } from '../auth'
 
 function formatDate(dateStr: string): string {
@@ -306,9 +307,21 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
               {item.sourceUrl && (
                 <p>
                   来源链接：{' '}
-                  <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[color:var(--primary)] hover:underline">
-                    {item.sourceUrl}
-                  </a>
+                  {/* Same rule as body links: a stored `javascript:` would be a
+                      working attack the moment a reader clicked it. Refused
+                      addresses stay visible as text. */}
+                  {safeLinkUrl(item.sourceUrl) ? (
+                    <a
+                      href={safeLinkUrl(item.sourceUrl)!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[color:var(--primary)] hover:underline"
+                    >
+                      {item.sourceUrl}
+                    </a>
+                  ) : (
+                    <span className="break-all">{item.sourceUrl}</span>
+                  )}
                 </p>
               )}
             </div>

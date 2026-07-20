@@ -4,8 +4,8 @@ import VisibilityBadge from '../components/VisibilityBadge'
 import MediaInsertMenu from '../components/MediaInsertMenu'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import {
-  getContentBySlug, updateContentItem,
-  folders as allFolders, series as allSeries, nextId } from '../mockData'
+  getContentBySlug,
+  folders as allFolders, series as allSeries } from '../mockData'
 import { extractHashTags } from '../lib/library'
 import LibraryPicker from '../components/LibraryPicker'
 import { updatePkm, createFolder, createSeriesEntry } from '../api/pkm'
@@ -13,7 +13,7 @@ import AutosaveIndicator from '../components/AutosaveStatus'
 import DraftRestoredBanner from '../components/DraftRestoredBanner'
 import { useAutosave } from '../hooks/useAutosave'
 import { loadDraft, editKey, type Draft } from '../api/drafts'
-import type { ContentKind, ThoughtType, Visibility } from '../types'
+import type { ContentKind, ThoughtSourceType, ThoughtType, Visibility } from '../types'
 import { useCurrentUser } from '../auth'
 
 type Tab = 'write' | 'preview'
@@ -54,6 +54,14 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
   const [visibility, setVisibility] = useState<Visibility>(item?.visibility ?? 'public')
   const [contentKind, setContentKind] = useState<ContentKind>(item?.contentKind ?? 'note')
   const [thoughtType, setThoughtType] = useState<ThoughtType>(item?.thoughtType ?? 'original')
+  // Excerpt provenance. Editable here because an excerpt saved with the wrong
+  // source used to be stuck with it: these fields existed only on the create
+  // form and never reached the update path.
+  const [sourceAuthor, setSourceAuthor] = useState(item?.sourceAuthor ?? '')
+  const [sourceTitle, setSourceTitle] = useState(item?.sourceTitle ?? '')
+  const [sourceType, setSourceType] = useState<ThoughtSourceType>(item?.sourceType ?? 'book')
+  const [sourceUrl, setSourceUrl] = useState(item?.sourceUrl ?? '')
+  const [sourceLocator, setSourceLocator] = useState(item?.sourceLocator ?? '')
   const [allowComments, setAllowComments] = useState(item?.allowComments ?? false)
   const [summary, setSummary] = useState(item?.summary ?? '')
   const [cover, setCover] = useState(item?.cover ?? '')
@@ -168,45 +176,46 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
         ...extractHashTags(body),
       ])
     )
-    // PKM writes go through the data layer so ownership is enforced there;
-    // other types still update the store directly for now.
-    if (item!.type === 'pkm') {
-      try {
-        await updatePkm(item!.id, currentUser!, {
-          title: title.trim(),
-          body,
-          summary: summary.trim(),
-          visibility,
-          contentKind,
-          allowComments,
-          tagNames,
-          folderIds,
-          seriesIds,
-          cover: cover.trim() || undefined,
-          category: category.trim() || undefined,
-          seoTitle: seoTitle.trim() || undefined,
-          seoDescription: seoDescription.trim() || undefined,
-          favorite,
-          archived,
-        })
-      } catch (err) {
-        setSaving(false)
-        alert(err instanceof Error ? err.message : '保存失败，请重试。')
-        return
-      }
-    } else {
-      updateContentItem(item!.id, {
+    // Every type goes through the data layer: ownership is enforced there, and
+    // with a backend configured this is the only path that actually persists.
+    try {
+      await updatePkm(item!.id, currentUser!, {
         title: title.trim(),
         body,
+        summary: summary.trim(),
         visibility,
         allowComments,
-        summary: summary.trim(),
+        tagNames,
         favorite,
         archived,
-        tags: tagNames.map(name => ({ id: nextId('tag'), name })),
-        ...(item!.type === 'thought' ? { thoughtType } : {}),
-        updatedAt: new Date().toISOString(),
+        ...(item!.type === 'pkm'
+          ? {
+              contentKind,
+              folderIds,
+              seriesIds,
+              cover: cover.trim() || undefined,
+              category: category.trim() || undefined,
+              seoTitle: seoTitle.trim() || undefined,
+              seoDescription: seoDescription.trim() || undefined,
+            }
+          : {}),
+        ...(item!.type === 'thought'
+          ? {
+              thoughtType,
+              // Provenance is editable now. It used to be create-only, so an
+              // excerpt saved with the wrong source was stuck with it.
+              sourceAuthor: thoughtType === 'excerpt' ? sourceAuthor.trim() : '',
+              sourceTitle: thoughtType === 'excerpt' ? sourceTitle.trim() : '',
+              sourceType: thoughtType === 'excerpt' ? sourceType : undefined,
+              sourceUrl: thoughtType === 'excerpt' ? sourceUrl.trim() : '',
+              sourceLocator: thoughtType === 'excerpt' ? sourceLocator.trim() : '',
+            }
+          : {}),
       })
+    } catch (err) {
+      setSaving(false)
+      alert(err instanceof Error ? err.message : '保存失败，请重试。')
+      return
     }
 
     autosave.discard()
@@ -559,6 +568,81 @@ export default function ContentEditPage({ section }: ContentEditPageProps) {
                   return entry.id
                 }}
               />
+            </div>
+          )}
+
+          {/* Excerpt provenance. Editable here because an excerpt saved with
+              the wrong source used to be stuck with it — these fields existed
+              only on the create form. */}
+          {item.type === 'thought' && thoughtType === 'excerpt' && (
+            <div className="grid gap-4 border-b border-[color:var(--border)] py-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="src-author" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                  作者或说话者
+                </label>
+                <input
+                  id="src-author"
+                  value={sourceAuthor}
+                  onChange={e => setSourceAuthor(e.target.value)}
+                  className="life-input w-full px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="src-title" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                  作品名称
+                </label>
+                <input
+                  id="src-title"
+                  value={sourceTitle}
+                  onChange={e => setSourceTitle(e.target.value)}
+                  className="life-input w-full px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="src-type" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                  来源类型
+                </label>
+                <select
+                  id="src-type"
+                  value={sourceType}
+                  onChange={e => setSourceType(e.target.value as ThoughtSourceType)}
+                  className="life-input w-full px-3 py-2 text-sm"
+                >
+                  <option value="book">书籍</option>
+                  <option value="article">文章</option>
+                  <option value="podcast">播客</option>
+                  <option value="video">视频</option>
+                  <option value="conversation">对话</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="src-locator" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                  位置
+                </label>
+                <input
+                  id="src-locator"
+                  value={sourceLocator}
+                  onChange={e => setSourceLocator(e.target.value)}
+                  placeholder="第 42 页 / 12:30"
+                  className="life-input w-full px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label htmlFor="src-url" className="mb-1.5 block text-xs font-medium text-[color:var(--foreground)]">
+                  来源链接
+                </label>
+                <input
+                  id="src-url"
+                  value={sourceUrl}
+                  onChange={e => setSourceUrl(e.target.value)}
+                  placeholder="https://"
+                  className="life-input w-full px-3 py-2 text-sm"
+                />
+                <p className="mt-1 text-xs leading-6 text-[color:var(--muted-foreground)]">
+                  只支持 https:// 或 mailto:，其他协议不会被保存。
+                </p>
+              </div>
             </div>
           )}
 
