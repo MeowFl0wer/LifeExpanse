@@ -291,3 +291,82 @@ describe('new content entry', () => {
     expect(screen.getByRole('button', { name: '+ 新建' })).toBeTruthy()
   })
 })
+
+// The keyword box used to go dead as soon as you opened Folders or Series.
+describe('searching the folder and series indexes', () => {
+  beforeEach(() => {
+    clearCurrentUser()
+    setCurrentUser('euan')
+  })
+
+  it('filters folders by name', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Folders' }))
+    await user.type(screen.getByPlaceholderText('搜索文件夹...'), '前端')
+
+    await waitFor(() => expect(screen.queryByText('系统 / Linux')).toBeNull())
+    expect(screen.getByText('前端 / React')).toBeTruthy()
+  })
+
+  it('filters series by name', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Series' }))
+    await user.type(screen.getByPlaceholderText('搜索系列...'), '工程')
+
+    await waitFor(() => expect(screen.queryByText('LifeExpanse 构建札记')).toBeNull())
+    expect(screen.getByText('工程笔记')).toBeTruthy()
+  })
+
+  it('says so when nothing matches, instead of looking empty', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Folders' }))
+    await user.type(screen.getByPlaceholderText('搜索文件夹...'), '不存在的东西')
+
+    await waitFor(() => expect(screen.getByText(/没有名称或简介匹配/)).toBeTruthy())
+  })
+
+  it('keeps note search working inside an open folder', async () => {
+    const user = userEvent.setup()
+    renderPkm()
+    await user.click(screen.getByRole('button', { name: 'Folders' }))
+    await user.click(screen.getByRole('button', { name: /前端 \/ React/ }))
+    await user.type(screen.getByPlaceholderText('关键词搜索...'), '并发')
+
+    await waitFor(() =>
+      expect(screen.getByText('React 中的并发模式：一些实践记录')).toBeTruthy()
+    )
+  })
+})
+
+// 「选择标签」used to sit on its own row below the filters.
+describe('filter toolbar order', () => {
+  beforeEach(() => {
+    clearCurrentUser()
+    setCurrentUser('euan')
+  })
+
+  it('places the tag toggle between the 草稿 pill and the search box', async () => {
+    renderPkm()
+    await waitFor(() => expect(screen.getByRole('button', { name: '草稿' })).toBeTruthy())
+
+    const draft = screen.getByRole('button', { name: '草稿' })
+    const tags = screen.getByRole('button', { name: '选择标签' })
+    const search = screen.getByPlaceholderText('关键词搜索...')
+
+    // DOCUMENT_POSITION_FOLLOWING === 4: the argument comes after the subject.
+    expect(draft.compareDocumentPosition(tags) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(tags.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('keeps all three on one row', async () => {
+    renderPkm()
+    await waitFor(() => expect(screen.getByRole('button', { name: '草稿' })).toBeTruthy())
+
+    const row = screen.getByRole('button', { name: '选择标签' }).parentElement!
+    expect(row.contains(screen.getByRole('button', { name: '草稿' }))).toBe(true)
+    expect(row.contains(screen.getByPlaceholderText('关键词搜索...'))).toBe(true)
+  })
+})

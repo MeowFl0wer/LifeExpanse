@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   foldersOf, effectiveSeriesIds, itemsInFolder, foldersInSeries, looseItemsInSeries,
   allItemsInSeries, unfiledItems, normaliseMembership, locationTrail, extractHashTags,
+  matchesLibraryKeyword,
 } from './library'
 import type { ContentItem, Folder, Series } from '../types'
 
@@ -133,5 +134,34 @@ describe('extractHashTags', () => {
 
   it('returns nothing when there are no tags', () => {
     expect(extractHashTags('普通的一段话')).toEqual([])
+  })
+})
+
+describe('matchesLibraryKeyword', () => {
+  const folder = { name: '读书笔记', description: '2024 年读过的书' }
+
+  it('matches everything when the keyword is empty or blank', () => {
+    expect(matchesLibraryKeyword(folder, '')).toBe(true)
+    expect(matchesLibraryKeyword(folder, '   ')).toBe(true)
+  })
+
+  it('matches on the name', () => {
+    expect(matchesLibraryKeyword(folder, '读书')).toBe(true)
+  })
+
+  it('matches on the description too', () => {
+    expect(matchesLibraryKeyword(folder, '2024')).toBe(true)
+  })
+
+  it('ignores case and surrounding spaces', () => {
+    expect(matchesLibraryKeyword({ name: 'Reading Notes' }, '  READING ')).toBe(true)
+  })
+
+  it('rejects a keyword that appears in neither', () => {
+    expect(matchesLibraryKeyword(folder, '飞行')).toBe(false)
+  })
+
+  it('handles a missing description', () => {
+    expect(matchesLibraryKeyword({ name: '读书笔记' }, '读过')).toBe(false)
   })
 })

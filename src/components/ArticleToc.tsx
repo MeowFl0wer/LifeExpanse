@@ -6,7 +6,7 @@ interface ArticleTocProps {
 }
 
 /**
- * Floating table of contents for articles (需求 10.3).
+ * Table of contents for notes and articles (需求 10.3).
  *
  * Highlights the heading currently in view. Uses IntersectionObserver where
  * available and simply renders a static list otherwise, so the TOC still works
@@ -44,7 +44,7 @@ export default function ArticleToc({ body }: ArticleTocProps) {
   if (headings.length === 0) return null
 
   return (
-    <nav aria-label="文章目录" className="text-sm">
+    <nav aria-label="内容目录" className="text-sm">
       <p className="life-kicker mb-3">目录</p>
       <ul className="space-y-1.5 border-l border-[color:var(--border)]">
         {headings.map(h => (

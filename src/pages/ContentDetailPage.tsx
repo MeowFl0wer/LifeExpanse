@@ -7,6 +7,7 @@ import VisibilityBadge from '../components/VisibilityBadge'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import CommentSection from '../components/CommentSection'
 import ArticleToc from '../components/ArticleToc'
+import { extractHeadings } from '../lib/toc'
 import { publishAsArticle, revertToNote, getLinkGraph, getPkmBySlug, deletePkm, type LinkGraph } from '../api/pkm'
 import { getContentBySlug, folders as allFolders, series as allSeries } from '../mockData'
 import type { ContentItem } from '../types'
@@ -124,8 +125,12 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
 
   const contentKind = localContentKind ?? item.contentKind
   const trail = locationTrail(item, allFolders, allSeries)
-  // 需求 10.3: articles read as a document with a floating outline.
-  const showToc = item.type === 'pkm' && contentKind === 'article'
+  // 需求 10.3: PKM content reads as a document with an outline beside it.
+  // Notes get one too — a long note benefits from it exactly as an article
+  // does. The decision is made on whether the body actually has headings, not
+  // on the form: without that check a heading-less note would reserve the
+  // sidebar column and leave an empty gutter.
+  const showToc = item.type === 'pkm' && extractHeadings(item.body).length > 0
   const typeLabel: Record<string, string> = { diary: '日记', pkm: '笔记与文章', thought: '随想' }
   const thoughtTypeLabel = item.thoughtType === 'excerpt' ? '摘录' : '原创'
 
@@ -326,7 +331,15 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
           )}
         </header>
 
-        <div className={showToc ? 'gap-10 lg:grid lg:grid-cols-[minmax(0,1fr)_15rem]' : ''}>
+        <div className={showToc ? 'gap-10 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]' : ''}>
+        {showToc && (
+          <aside className="hidden lg:block">
+            <div className="sticky top-24">
+              <ArticleToc body={item.body} />
+            </div>
+          </aside>
+        )}
+
         {/* Article body — strictly read-only */}
         <article>
           <MarkdownRenderer
@@ -428,14 +441,6 @@ export default function ContentDetailPage({ section }: ContentDetailPageProps) {
           </section>
         )}
         </article>
-
-        {showToc && (
-          <aside className="hidden lg:block">
-            <div className="sticky top-24">
-              <ArticleToc body={item.body} />
-            </div>
-          </aside>
-        )}
         </div>
 
         {/* Ch 11: comments belong to the article form of PKM content only. */}

@@ -11,7 +11,9 @@ import {
   allContent, addContentItem, makeUniqueSlug,
   nextId,
 } from '../mockData'
-import { itemsInFolder, foldersInSeries, looseItemsInSeries, allItemsInSeries } from '../lib/library'
+import {
+  itemsInFolder, foldersInSeries, looseItemsInSeries, allItemsInSeries, matchesLibraryKeyword,
+} from '../lib/library'
 import {
   removeFolder, removeSeries, listPkm, listFolders, listSeries,
   createFolder, createSeriesEntry, saveFolder, saveSeries,
@@ -471,12 +473,16 @@ export default function ContentListPage({ section }: ContentListPageProps) {
             </div>
           )}
 
+          <TagFilterStrip tags={facets} selected={selectedTags} onChange={setSelectedTags} />
+
           <div className="relative">
             <input
               type="text"
               value={filterKeyword}
               onChange={e => setFilterKeyword(e.target.value)}
-              placeholder="关键词搜索..."
+              placeholder={browsingLibrary && !openFolder && !openSeries
+                ? (activeView === 'folders' ? '搜索文件夹...' : '搜索系列...')
+                : '关键词搜索...'}
               className="life-input w-44 py-1.5 pl-8 pr-3 text-xs sm:w-60"
             />
             <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]"
@@ -487,16 +493,13 @@ export default function ContentListPage({ section }: ContentListPageProps) {
           </div>
         </div>
 
-        <div className="mb-8">
-          <TagFilterStrip tags={facets} selected={selectedTags} onChange={setSelectedTags} />
-        </div>
-
         {browsingLibrary ? (
           <LibraryBrowser
             view={activeView === 'folders' ? 'folders' : 'series'}
             isOwner={isOwner}
             folders={ownFolders}
             seriesList={ownSeries}
+            keyword={filterKeyword}
             baseItems={baseItems}
             applyFilters={applyCommonFilters}
             openFolder={openFolder}
@@ -603,16 +606,24 @@ interface LibraryBrowserProps {
   onCreateFolder: (draft: LibraryItemDraft) => void | Promise<void>
   onCreateSeries: (draft: LibraryItemDraft) => void | Promise<void>
   onSaveFolder: (id: string, draft: LibraryItemDraft) => void | Promise<void>
+  /** Shared with the content search box; filters the folder and series indexes by name. */
+  keyword: string
 }
 
 function LibraryBrowser({
-  view, isOwner, folders, seriesList, baseItems, applyFilters,
+  view, isOwner, folders, seriesList, baseItems, applyFilters, keyword,
   openFolder, openSeries, onOpenFolder, onOpenSeries, onBack,
   showFolderForm, showSeriesForm, editingFolder, editingSeries,
   onShowFolderForm, onShowSeriesForm, onEditFolder, onEditSeries,
   onCreateFolder, onCreateSeries, onSaveFolder, onSaveSeries,
   onDeleteFolder, onDeleteSeries,
 }: LibraryBrowserProps) {
+  // Only the displayed lists are narrowed. `folders` itself stays whole because
+  // the hierarchy helpers below need every folder to work out what belongs to
+  // which series — filtering it would silently drop content from the counts.
+  const matchedFolders = folders.filter(f => matchesLibraryKeyword(f, keyword))
+  const matchedSeries = seriesList.filter(s => matchesLibraryKeyword(s, keyword))
+
   /* ----- inside a folder ----- */
   if (openFolder) {
     const notes = applyFilters(itemsInFolder(baseItems, openFolder.id))
@@ -737,7 +748,11 @@ function LibraryBrowser({
         {childFolders.length > 0 && (
           <div className="mb-10">
             <p className="life-kicker mb-3">文件夹</p>
-            <FolderGrid folders={childFolders} baseItems={baseItems} onOpen={onOpenFolder} />
+            <FolderGrid
+              folders={childFolders.filter(f => matchesLibraryKeyword(f, keyword))}
+              baseItems={baseItems}
+              onOpen={onOpenFolder}
+            />
           </div>
         )}
 
@@ -783,8 +798,12 @@ function LibraryBrowser({
           <p className="py-16 text-center text-sm text-[color:var(--muted-foreground)]">
             {isOwner ? '还没有文件夹。' : '作者没有公开任何文件夹哦～'}
           </p>
+        ) : matchedFolders.length === 0 ? (
+          <p className="py-16 text-center text-sm text-[color:var(--muted-foreground)]">
+            没有名称或简介匹配「{keyword.trim()}」的文件夹。
+          </p>
         ) : (
-          <FolderGrid folders={folders} baseItems={baseItems} onOpen={onOpenFolder} />
+          <FolderGrid folders={matchedFolders} baseItems={baseItems} onOpen={onOpenFolder} />
         )}
       </section>
     )
@@ -812,9 +831,13 @@ function LibraryBrowser({
         <p className="py-16 text-center text-sm text-[color:var(--muted-foreground)]">
           {isOwner ? '还没有系列。' : '作者没有公开任何系列哦～'}
         </p>
+      ) : matchedSeries.length === 0 ? (
+        <p className="py-16 text-center text-sm text-[color:var(--muted-foreground)]">
+          没有名称或简介匹配「{keyword.trim()}」的系列。
+        </p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {seriesList.map(s => {
+          {matchedSeries.map(s => {
             const count = allItemsInSeries(baseItems, folders, s.id).length
             const folderCount = foldersInSeries(folders, s.id).length
             return (
