@@ -1,0 +1,47 @@
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from .config import get_settings
+from .db import Base, engine
+from .routers import auth, comments, content, drafts, library, trash
+
+settings = get_settings()
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Fine for SQLite and a single-owner deployment. A migration tool (Alembic)
+    # should replace this before the schema changes under real data.
+    Base.metadata.create_all(bind=engine)
+    yield
+
+
+app = FastAPI(
+    title="LifeExpanse API",
+    version="0.5.0",
+    description="个人数字记录与公开分享平台的后端。权限在服务端强制执行。",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    # The session lives in an HttpOnly cookie, so credentials must be allowed
+    # and the origin list cannot be a wildcard.
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth.router)
+app.include_router(content.router)
+app.include_router(comments.router)
+app.include_router(library.router)
+app.include_router(trash.router)
+app.include_router(drafts.router)
+
+
+@app.get("/api/v1/health")
+def health() -> dict[str, str]:
+    return {"status": "ok", "version": app.version}

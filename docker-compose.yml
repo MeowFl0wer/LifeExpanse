@@ -1,0 +1,27 @@
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      # Generate one per deployment: openssl rand -hex 32
+      LIFE_SECRET_KEY: ${LIFE_SECRET_KEY:?set LIFE_SECRET_KEY in .env}
+      LIFE_DATABASE_URL: sqlite:////data/lifeexpanse.db
+      LIFE_SITE_OWNER: ${LIFE_SITE_OWNER:-euan}
+      LIFE_REGISTRATION_MODE: ${LIFE_REGISTRATION_MODE:-closed}
+      LIFE_CORS_ORIGINS: ${LIFE_CORS_ORIGINS:-http://localhost:8080}
+    volumes:
+      # The database and uploads outlive the container.
+      - life-data:/data
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${LIFE_PORT:-8080}:80"
+
+volumes:
+  life-data:

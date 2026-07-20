@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { clearDraftsFor } from './api/drafts'
 
 const SESSION_KEY = 'life_session_user'
 
@@ -68,7 +69,7 @@ export function clearCurrentUser(): void {
   // Drafts belong to the person who wrote them; logging out must not leave
   // them visible to whoever signs in next on this browser.
   const leaving = cachedUser
-  if (leaving) void import('./api/drafts').then(m => m.clearDraftsFor(leaving))
+  if (leaving) void clearDraftsFor(leaving)
   try {
     window.localStorage.removeItem(SESSION_KEY)
     window.sessionStorage.removeItem(SESSION_KEY)

@@ -1,4 +1,5 @@
 import { ok } from './client'
+import { request, usingBackend } from './http'
 
 /**
  * In-progress edits, kept so closing the tab mid-sentence does not lose work.
@@ -74,16 +75,53 @@ export async function saveDraft<T>(
   baseUpdatedAt?: string
 ): Promise<Draft<T>> {
   const draft: Draft<T> = { key, savedAt: new Date().toISOString(), baseUpdatedAt, data }
+
+  // Always keep the local copy: it is what survives a dropped connection
+  // (需求 25.2) and what makes the next page load instant.
   try {
     storage()?.setItem(PREFIX + key, JSON.stringify(draft))
   } catch {
-    // Quota or private mode — autosave degrades to nothing rather than throwing
-    // in the middle of typing.
+    // Quota or private mode — autosave degrades rather than throwing mid-typing.
   }
+
+  if (usingBackend()) {
+    try {
+      await request(`/drafts/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        body: { payload: data, base_updated_at: baseUpdatedAt ?? null },
+      })
+    } catch {
+      // Offline: the local copy stands in until the next successful save.
+    }
+  }
+
   return ok(draft)
 }
 
 export async function loadDraft<T>(key: string): Promise<Draft<T> | null> {
+  // Prefer the server copy so a draft written on another device wins.
+  if (usingBackend()) {
+    try {
+      const remote = await request<{
+        key: string
+        payload: T
+        base_updated_at: string | null
+        saved_at: string
+      } | null>(`/drafts/${encodeURIComponent(key)}`)
+      if (remote) {
+        return ok({
+          key: remote.key,
+          savedAt: remote.saved_at,
+          baseUpdatedAt: remote.base_updated_at ?? undefined,
+          data: remote.payload,
+        })
+      }
+      return ok(null)
+    } catch {
+      // Fall through to the local copy when the server is unreachable.
+    }
+  }
+
   const raw = storage()?.getItem(PREFIX + key)
   if (!raw) return ok(null)
   try {
@@ -104,6 +142,13 @@ export async function clearDraft(key: string): Promise<void> {
     storage()?.removeItem(PREFIX + key)
   } catch {
     // ignore
+  }
+  if (usingBackend()) {
+    try {
+      await request(`/drafts/${encodeURIComponent(key)}`, { method: 'DELETE' })
+    } catch {
+      // The local copy is gone either way; the server entry expires on its own.
+    }
   }
   return ok(undefined)
 }
