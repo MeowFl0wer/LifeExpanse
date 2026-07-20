@@ -25,6 +25,28 @@ class Settings(BaseSettings):
     trash_retention_days: int = 30
     draft_retention_days: int = 14
 
+    # ---- Accounts ----
+    # The single administrative account. It owns no content (需求 3.1).
+    admin_username: str = "AdminEuan"
+    # Set in the environment to bootstrap the admin on first start. If it is
+    # left empty a random password is generated and printed once to the log,
+    # so an unconfigured deployment never ends up with a guessable admin.
+    admin_bootstrap_password: str = ""
+
+    # ---- Email verification ----
+    verification_code_ttl_minutes: int = 10
+    # Guesses allowed against one code before it is burned.
+    verification_max_attempts: int = 5
+    # How many codes one address may request within the window.
+    verification_rate_limit: int = 5
+    verification_rate_window_minutes: int = 60
+
+    # console | resend. Resend is wired in later; console prints to the log so
+    # the whole flow is testable without an email provider.
+    email_backend: str = "console"
+    resend_api_key: str = ""
+    email_from: str = "LifeExpanse <noreply@example.com>"
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

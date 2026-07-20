@@ -2,21 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import accounts as acc
+from .. import email as mailer
 from ..config import get_settings
 from ..db import get_db
-from ..models import AuditLog, SessionToken, User
-from ..schemas import LoginIn, RegisterIn, UserOut
+from ..models import AuditLog, SessionToken, User, utcnow
+from ..schemas import (
+    ChangeEmailIn, ChangePasswordIn, EmailOnlyIn, LoginIn, MeOut, RegisterIn,
+    ResetPasswordIn, UserOut,
+)
 from ..security import (
     SESSION_COOKIE, create_session, current_user, hash_password, revoke_session, verify_password,
 )
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
-
-RESERVED = {
-    "login", "logout", "register", "signup", "app", "dashboard", "admin", "api",
-    "settings", "account", "assets", "static", "uploads", "health", "search",
-    "about", "terms", "privacy", "new", "trash",
-}
 
 
 def _set_cookie(response: Response, token: SessionToken, remember: bool) -> None:
@@ -34,33 +33,124 @@ def _set_cookie(response: Response, token: SessionToken, remember: bool) -> None
     )
 
 
+NEUTRAL_REGISTER = "如果该邮箱可以使用，我们已发送验证码"
+
+
+@router.post("/register/code")
+def request_register_code(payload: EmailOnlyIn, db: Session = Depends(get_db)):
+    """Sends a code to a would-be registrant.
+
+    The response is the same whether the address is free, already registered or
+    rate limited. An attacker must not be able to use this endpoint to work out
+    who has an account here.
+    """
+    address = acc.normalise_email(payload.email)
+
+    if acc.registration_mode(db) == "closed":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "当前站点未开放注册")
+
+    if acc.email_taken(db, address):
+        # Tell the owner, not the requester: if this was not them, they should
+        # know somebody is poking at their address.
+        mailer.send_email(
+            to=address,
+            subject="LifeExpanse 注册提醒",
+            body=(
+                "有人尝试用这个邮箱注册 LifeExpanse，但它已经绑定了一个账号。\n\n"
+                "如果是你本人，请直接登录，或使用「忘记密码」找回。\n"
+                "如果不是你，可以忽略这封邮件。"
+            ),
+        )
+    else:
+        acc.issue_code(db, address, "register")
+
+    return {"detail": NEUTRAL_REGISTER}
+
+
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterIn, db: Session = Depends(get_db)):
-    settings = get_settings()
-    if settings.registration_mode == "closed":
+    mode = acc.registration_mode(db)
+    if mode == "closed":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "当前站点未开放注册")
-    if settings.registration_mode == "invite" and not payload.invite_code:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "需要邀请码")
 
     username = payload.username.lower()
-    if username in RESERVED:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "该用户名为系统保留字")
+    # Usernames are public URLs, so saying one is taken reveals nothing that a
+    # visit to /{username} would not. Addresses are the opposite — hence the
+    # neutral handling above.
+    problem = acc.username_problem(username)
+    if problem:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, problem)
     if db.scalar(select(User).where(User.username == username)):
         raise HTTPException(status.HTTP_409_CONFLICT, "该用户名已被占用")
-    if db.scalar(select(User).where(User.email == payload.email)):
-        raise HTTPException(status.HTTP_409_CONFLICT, "该邮箱已被使用")
+
+    address = acc.normalise_email(payload.email)
+    if mode == "invite":
+        if not payload.invite_code or not acc.invite_is_valid(db, payload.invite_code):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "邀请码无效或已被使用")
+
+    # Checked last and reported as a code failure: a caller who guessed an
+    # existing address still cannot tell it apart from a wrong code.
+    if not acc.consume_code(db, address, "register", payload.code):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "验证码不正确或已过期")
+    if acc.email_taken(db, address):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "验证码不正确或已过期")
 
     user = User(
         username=username,
-        email=payload.email,
+        email=address,
+        email_verified=True,
         display_name=payload.display_name or username,
         password_hash=hash_password(payload.password),
+        role="user",
     )
     db.add(user)
+    db.flush()
+
+    if mode == "invite" and payload.invite_code:
+        if not acc.claim_invite(db, payload.invite_code, user):
+            # Someone spent it between the check above and here.
+            db.rollback()
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "邀请码无效或已被使用")
+
     db.add(AuditLog(actor=username, event="register"))
     db.commit()
     db.refresh(user)
     return user
+
+
+# --------------------------------------------------------------------------
+# Password reset (forgotten password)
+# --------------------------------------------------------------------------
+
+@router.post("/password/forgot")
+def forgot_password(payload: EmailOnlyIn, db: Session = Depends(get_db)):
+    """Always the same answer, whether or not the address is registered."""
+    address = acc.normalise_email(payload.email)
+    if acc.find_by_email(db, address) is not None:
+        acc.issue_code(db, address, "reset_password")
+    return {"detail": acc.NEUTRAL_CODE_SENT}
+
+
+@router.post("/password/reset")
+def reset_password(payload: ResetPasswordIn, db: Session = Depends(get_db)):
+    address = acc.normalise_email(payload.email)
+    user = acc.find_by_email(db, address)
+
+    # Consume first so a wrong address burns an attempt just like a wrong code,
+    # and the two are indistinguishable from outside.
+    ok = acc.consume_code(db, address, "reset_password", payload.code)
+    if not ok or user is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "验证码不正确或已过期")
+
+    user.password_hash = hash_password(payload.new_password)
+    # Any session an attacker may already hold dies with the password.
+    for token in db.scalars(
+        select(SessionToken).where(SessionToken.user_id == user.id, SessionToken.revoked_at.is_(None))
+    ).all():
+        token.revoked_at = utcnow()
+    db.add(AuditLog(actor=user.username, event="password_reset"))
+    db.commit()
+    return {"detail": "密码已重置，请重新登录"}
 
 
 @router.post("/login", response_model=UserOut)
@@ -78,6 +168,10 @@ def login(payload: LoginIn, request: Request, response: Response, db: Session = 
 
     token = create_session(db, user, request.headers.get("user-agent", ""))
     _set_cookie(response, token, payload.remember)
+    # The admin console sorts users by these, so they are recorded here rather
+    # than derived from the audit log later.
+    user.login_count = (user.login_count or 0) + 1
+    user.last_login_at = utcnow()
     db.add(AuditLog(actor=user.username, event="login"))
     db.commit()
     return user
@@ -91,9 +185,123 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     response.delete_cookie(SESSION_COOKIE, path="/")
 
 
-@router.get("/me", response_model=UserOut)
+@router.get("/me", response_model=MeOut)
 def me(user: User = Depends(current_user)):
     return user
+
+
+# --------------------------------------------------------------------------
+# Step-up verification
+#
+# 需求: changing a password or an email needs the current password *and* a
+# second proof. Email is the default second factor; TOTP is the way through
+# when the address is no longer reachable. Requiring one of the two — never
+# neither — is what stops an unlocked laptop from being enough.
+# --------------------------------------------------------------------------
+
+def _verify_step_up(
+    db: Session, user: User, email_code: str | None, totp_code: str | None, purpose: str
+) -> None:
+    if email_code:
+        if not acc.consume_code(db, user.email, purpose, email_code):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "验证码不正确或已过期")
+        return
+
+    if totp_code:
+        from ..totp import verify_totp_or_recovery
+
+        if not verify_totp_or_recovery(db, user, totp_code):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "两步验证码不正确")
+        return
+
+    raise HTTPException(
+        status.HTTP_400_BAD_REQUEST,
+        "需要邮箱验证码或两步验证码",
+    )
+
+
+@router.post("/step-up/code")
+def request_step_up_code(
+    purpose: str, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    """Sends a code to the signed-in user's own primary address."""
+    if purpose not in {"change_password", "change_email", "disable_2fa"}:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "未知的验证用途")
+    acc.issue_code(db, user.email, purpose)
+    # Neutral even here: rate limiting must not be visible as a distinct state.
+    return {"detail": "验证码已发送到你的主邮箱"}
+
+
+@router.post("/password/change")
+def change_password(
+    payload: ChangePasswordIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(payload.current_password, user.password_hash):
+        db.add(AuditLog(actor=user.username, event="password_change_failed"))
+        db.commit()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "当前密码不正确")
+
+    _verify_step_up(db, user, payload.email_code, payload.totp_code, "change_password")
+
+    user.password_hash = hash_password(payload.new_password)
+    db.add(AuditLog(actor=user.username, event="password_changed"))
+    db.commit()
+
+    mailer.send_email(
+        to=user.email,
+        subject="LifeExpanse 密码已修改",
+        body=(
+            "你的 LifeExpanse 账号密码刚刚被修改。\n\n"
+            "如果这不是你本人的操作，请立即通过「忘记密码」重置，并检查登录设备。"
+        ),
+    )
+    return {"detail": "密码已修改"}
+
+
+@router.post("/email/change/code")
+def request_new_email_code(payload: EmailOnlyIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Sends a code to the address the user wants to move to.
+
+    Neutral again: if the address already belongs to somebody, nothing is sent
+    but the answer is the same, so this cannot be used to test addresses.
+    """
+    address = acc.normalise_email(payload.email)
+    if not acc.email_taken(db, address, excluding_user_id=user.id):
+        acc.issue_code(db, address, "change_email")
+    return {"detail": "如果该邮箱可以使用，我们已发送验证码"}
+
+
+@router.post("/email/change")
+def change_email(
+    payload: ChangeEmailIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "当前密码不正确")
+
+    # Prove it is really the account holder…
+    _verify_step_up(db, user, payload.email_code, payload.totp_code, "change_email")
+
+    new_address = acc.normalise_email(payload.new_email)
+    # …and that the new address is reachable and free.
+    if not acc.consume_code(db, new_address, "change_email", payload.new_email_code):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "新邮箱验证码不正确或已过期")
+    if acc.email_taken(db, new_address, excluding_user_id=user.id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "新邮箱验证码不正确或已过期")
+
+    old_address = user.email
+    user.email = new_address
+    user.email_verified = True
+    db.add(AuditLog(actor=user.username, event="email_changed"))
+    db.commit()
+
+    # The victim's one chance to notice a takeover, so it goes to the address
+    # being replaced — and quotes the new one masked.
+    mailer.send_email_changed_notice(old_address, acc.mask_email(new_address))
+    return {"detail": "邮箱已更新"}
 
 
 @router.get("/sessions")

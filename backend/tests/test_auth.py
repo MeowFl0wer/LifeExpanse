@@ -54,12 +54,14 @@ def test_logout_ends_the_session(client):
 
 def test_reserved_usernames_are_refused(client):
     res = client.post("/api/v1/auth/register", json={
-        "username": "admin", "email": "a@example.com", "password": "demo123456"})
+        "username": "admin", "email": "a@example.com",
+        "password": "demo123456", "code": "000000"})
     assert res.status_code == 400
 
 
 def test_duplicate_username_is_refused(client):
     register(client, "euan")
     res = client.post("/api/v1/auth/register", json={
-        "username": "euan", "email": "other@example.com", "password": "demo123456"})
+        "username": "euan", "email": "other@example.com",
+        "password": "demo123456", "code": "000000"})
     assert res.status_code == 409
