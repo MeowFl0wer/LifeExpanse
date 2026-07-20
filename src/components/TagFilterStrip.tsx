@@ -16,6 +16,10 @@ interface TagFilterStripProps {
  * row of small pills between two rules, and tags are multi-selectable. The
  * caret points up while open, and the label reflects whether a filter is
  * currently applied.
+ *
+ * Renders as a fragment so the toggle sits inline among the other filter
+ * controls while the expanded panel still spans the full row — hence
+ * `basis-full` on the panel rather than a wrapper element.
  */
 export default function TagFilterStrip({ tags, selected, onChange }: TagFilterStripProps) {
   const [open, setOpen] = useState(false)
@@ -26,7 +30,7 @@ export default function TagFilterStrip({ tags, selected, onChange }: TagFilterSt
   }
 
   return (
-    <div className="w-full">
+    <>
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -48,7 +52,7 @@ export default function TagFilterStrip({ tags, selected, onChange }: TagFilterSt
       </button>
 
       {open && (
-        <div className="mt-3 border-y border-[color:var(--border)] py-3">
+        <div className="basis-full border-y border-[color:var(--border)] py-3">
           {tags.length === 0 ? (
             <p className="text-xs text-[color:var(--muted-foreground)]">暂无标签</p>
           ) : (
@@ -87,6 +91,6 @@ export default function TagFilterStrip({ tags, selected, onChange }: TagFilterSt
           )}
         </div>
       )}
-    </div>
+    </>
   )
 }

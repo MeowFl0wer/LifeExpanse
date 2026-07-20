@@ -78,7 +78,7 @@ describe('publish as article', () => {
   })
 })
 
-describe('article table of contents', () => {
+describe('table of contents', () => {
   beforeEach(() => { clearCurrentUser(); setCurrentUser('euan') })
 
   it('lists the headings of an article', async () => {
@@ -88,17 +88,31 @@ describe('article table of contents', () => {
     })
     renderDetail(article.slug)
 
-    await waitFor(() => expect(screen.getByRole('navigation', { name: '文章目录' })).toBeTruthy())
-    const toc = screen.getByRole('navigation', { name: '文章目录' })
+    await waitFor(() => expect(screen.getByRole('navigation', { name: '内容目录' })).toBeTruthy())
+    const toc = screen.getByRole('navigation', { name: '内容目录' })
     expect(toc.textContent).toContain('开头')
     expect(toc.textContent).toContain('中间')
   })
 
-  it('is not shown for a plain note', async () => {
-    const note = await makeNote({ body: '# 标题\n正文' })
+  // Notes get an outline too — a long note benefits from it exactly as an
+  // article does.
+  it('lists the headings of a note as well', async () => {
+    const note = await makeNote({ body: '# 笔记开头\n\n正文\n\n## 笔记中间' })
+    renderDetail(note.slug)
+
+    await waitFor(() => expect(screen.getByRole('navigation', { name: '内容目录' })).toBeTruthy())
+    const toc = screen.getByRole('navigation', { name: '内容目录' })
+    expect(toc.textContent).toContain('笔记开头')
+    expect(toc.textContent).toContain('笔记中间')
+  })
+
+  // Without this the sidebar column would still be reserved, leaving an empty
+  // gutter beside content that has nothing to outline.
+  it('is not shown when the body has no headings', async () => {
+    const note = await makeNote({ body: '只有正文，没有任何标题。' })
     renderDetail(note.slug)
     await waitFor(() => expect(screen.getAllByText(note.title).length).toBeGreaterThan(0))
-    expect(screen.queryByRole('navigation', { name: '文章目录' })).toBeNull()
+    expect(screen.queryByRole('navigation', { name: '内容目录' })).toBeNull()
   })
 })
 

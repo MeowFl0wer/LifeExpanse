@@ -112,3 +112,23 @@ export function extractHashTags(text: string): string[] {
   const names = found.map(raw => raw.slice(1)).filter(Boolean)
   return Array.from(new Set(names))
 }
+
+/**
+ * Keyword filter for the folder and series indexes.
+ *
+ * Matches name and description, mirroring how content search covers title and
+ * summary — searching only the name would miss a word the user can plainly see
+ * on the card. An empty or whitespace-only keyword matches everything, so the
+ * caller does not have to special-case "no search".
+ */
+export function matchesLibraryKeyword(
+  entry: { name: string; description?: string },
+  keyword: string
+): boolean {
+  const kw = keyword.trim().toLowerCase()
+  if (!kw) return true
+  return (
+    entry.name.toLowerCase().includes(kw) ||
+    (entry.description ?? '').toLowerCase().includes(kw)
+  )
+}
