@@ -372,3 +372,117 @@ def test_a_deleted_file_leaves_the_listing(client):
     client.delete(f"/api/v1/media/{media_id}")
 
     assert client.get("/api/v1/media").json() == []
+
+
+# --------------------------------------------------------------------------
+# Thumbnails — display never pulls the original
+# --------------------------------------------------------------------------
+
+def big_png(width=1600, height=1200) -> bytes:
+    """A real image, large enough that a thumbnail is worth making."""
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), (120, 160, 140)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_a_large_image_gets_a_thumbnail(client):
+    register(client, "euan")
+    login(client, "euan")
+
+    body = upload(client, big_png()).json()
+    assert body["has_thumbnail"] is True
+    assert body["thumbnail_url"].endswith("?variant=thumb")
+
+
+def test_the_thumbnail_is_much_smaller_than_the_original(client):
+    register(client, "euan")
+    login(client, "euan")
+    media_id = upload(client, big_png()).json()["id"]
+
+    original = client.get(f"/api/v1/media/{media_id}")
+    thumb = client.get(f"/api/v1/media/{media_id}", params={"variant": "thumb"})
+
+    assert thumb.status_code == 200
+    assert thumb.headers["Content-Type"] == "image/webp"
+    # The whole point: a page of photos must not pull full-size files.
+    assert len(thumb.content) < len(original.content) / 2
+
+
+def test_the_thumbnail_is_bounded_by_the_configured_edge(client):
+    from PIL import Image
+    from app.config import get_settings
+
+    register(client, "euan")
+    login(client, "euan")
+    media_id = upload(client, big_png()).json()["id"]
+
+    thumb = client.get(f"/api/v1/media/{media_id}", params={"variant": "thumb"})
+    with Image.open(io.BytesIO(thumb.content)) as img:
+        assert max(img.size) <= get_settings().thumbnail_max_edge
+
+
+def test_a_small_image_gets_no_thumbnail(client):
+    """There would be nothing saved, so none is made."""
+    register(client, "euan")
+    login(client, "euan")
+
+    body = upload(client, big_png(80, 60)).json()
+    assert body["has_thumbnail"] is False
+    assert body["thumbnail_url"] == ""
+
+
+def test_asking_for_a_thumbnail_that_does_not_exist_returns_the_original(client):
+    """The caller wanted the picture; 404ing on the variant would be unhelpful."""
+    register(client, "euan")
+    login(client, "euan")
+    media_id = upload(client, big_png(80, 60)).json()["id"]
+
+    res = client.get(f"/api/v1/media/{media_id}", params={"variant": "thumb"})
+    assert res.status_code == 200
+    assert res.headers["Content-Type"] == "image/png"
+
+
+def test_a_thumbnail_obeys_the_same_permissions_as_the_original(client):
+    register(client, "euan")
+    login(client, "euan")
+    media_id = upload(client, big_png()).json()["id"]
+    client.post("/api/v1/auth/logout")
+
+    assert client.get(f"/api/v1/media/{media_id}", params={"variant": "thumb"}).status_code == 404
+
+
+def test_downloading_offers_the_file_as_an_attachment(client):
+    register(client, "euan")
+    login(client, "euan")
+    media_id = upload(client, big_png(), name="holiday.png").json()["id"]
+
+    res = client.get(f"/api/v1/media/{media_id}", params={"download": "true"})
+    assert res.status_code == 200
+    assert res.headers["Content-Disposition"].startswith("attachment")
+    assert "holiday.png" in res.headers["Content-Disposition"]
+
+
+def test_a_hostile_filename_cannot_break_the_disposition_header(client):
+    register(client, "euan")
+    login(client, "euan")
+    media_id = upload(client, big_png(), name='evil".png').json()["id"]
+
+    res = client.get(f"/api/v1/media/{media_id}", params={"download": "true"})
+    header = res.headers["Content-Disposition"]
+    # The quote is stripped, so the header stays one well-formed value.
+    assert header.count('"') == 2
+
+
+def test_deleting_removes_the_thumbnail_too(client):
+    from app import storage
+
+    register(client, "euan")
+    login(client, "euan")
+    media_id = upload(client, big_png()).json()["id"]
+    thumb = storage.thumb_path_for(media_id, "image/png")
+    assert thumb.is_file()
+
+    client.delete(f"/api/v1/media/{media_id}")
+    assert not thumb.is_file()

@@ -343,3 +343,55 @@ textarea {
 .prose h4[id] {
   scroll-margin-top: 5.5rem;
 }
+
+/* ---- Images inside rendered content ----
+   The picture shows a thumbnail; 「查看原图」 and 「下载」 sit in the
+   bottom-right corner and appear on hover. Touch screens have no hover, so
+   they stay visible there rather than being unreachable. */
+.life-figure {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.life-figure > img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+
+.life-figure-actions {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  display: flex;
+  gap: 0.25rem;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.life-figure:hover .life-figure-actions,
+.life-figure:focus-within .life-figure-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .life-figure-actions { opacity: 1; }
+}
+
+.life-figure-actions a {
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  text-decoration: none;
+  backdrop-filter: blur(4px);
+  transition: background-color 0.15s ease;
+}
+
+.life-figure-actions a:hover {
+  background: rgb(0 0 0 / 0.78);
+}

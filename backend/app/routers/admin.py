@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import accounts as acc
+from .. import media_links
 from ..db import get_db
 from ..models import AuditLog, Content, InviteCode, MediaFile, SessionToken, User
 from ..security import current_user
@@ -311,6 +312,43 @@ def revoke_invite(
     invite.revoked_at = datetime.now(timezone.utc)
     db.add(AuditLog(actor=admin.username, event="invite_revoked", detail=invite.code))
     db.commit()
+
+
+# --------------------------------------------------------------------------
+# Maintenance
+# --------------------------------------------------------------------------
+
+@router.post("/media/sweep")
+def sweep_media(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Removes files nothing references any more.
+
+    Also runs at startup. Exposed here so it can be triggered without waiting
+    for a restart, and so the count is visible.
+    """
+    removed = media_links.sweep(db)
+    db.add(AuditLog(actor=admin.username, event="media_swept", detail=f"{removed} 个文件"))
+    db.commit()
+    return {"removed": removed}
+
+
+@router.get("/media/orphans")
+def orphan_summary(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """How many files are unreferenced, so the number never silently grows."""
+    orphaned = db.scalar(
+        select(func.count()).select_from(MediaFile).where(
+            MediaFile.deleted_at.is_(None),
+            MediaFile.content_id.is_(None),
+            MediaFile.orphaned_at.is_not(None),
+        )
+    ) or 0
+    unattached = db.scalar(
+        select(func.count()).select_from(MediaFile).where(
+            MediaFile.deleted_at.is_(None),
+            MediaFile.content_id.is_(None),
+            MediaFile.orphaned_at.is_(None),
+        )
+    ) or 0
+    return {"orphaned": orphaned, "never_attached": unattached}
 
 
 # --------------------------------------------------------------------------

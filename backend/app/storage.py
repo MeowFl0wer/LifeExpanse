@@ -100,6 +100,62 @@ def path_for(media_id: str, mime: str) -> Path:
     return media_root() / safe[:2] / safe[2:4] / f"{safe}{_EXTENSIONS.get(mime, '.bin')}"
 
 
+def thumb_path_for(media_id: str, mime: str) -> Path:
+    """Thumbnails sit beside the original with a suffix, so removing a file
+    means removing two predictable paths rather than searching."""
+    original = path_for(media_id, mime)
+    return original.with_name(f"{original.stem}.thumb.webp")
+
+
+def make_thumbnail(media_id: str, mime: str, data: bytes) -> bool:
+    """Writes a WebP thumbnail beside the original. False if there is no point.
+
+    Display always uses this; the original is only fetched when the reader
+    asks to see or download it. A page of ten photos should not pull ten
+    full-size files.
+
+    Failure is not fatal — an image that Pillow cannot read is still a valid
+    upload, it just gets shown at full size.
+    """
+    if not mime.startswith("image/"):
+        return False
+
+    try:
+        from PIL import Image
+    except ImportError:  # pragma: no cover
+        return False
+
+    settings = get_settings()
+    edge = settings.thumbnail_max_edge
+
+    try:
+        import io
+
+        with Image.open(io.BytesIO(data)) as img:
+            if img.width <= edge and img.height <= edge:
+                # Already small enough; a "thumbnail" would be no smaller.
+                return False
+
+            # Animated GIFs lose their animation when thumbnailed, so the
+            # still first frame is what gets shown until it is clicked.
+            img = img.convert("RGB") if img.mode in ("P", "RGBA", "LA") else img
+            img.thumbnail((edge, edge), Image.LANCZOS)
+
+            target = thumb_path_for(media_id, mime)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            img.save(target, "WEBP", quality=82, method=4)
+            return True
+    except Exception:
+        return False
+
+
+def load_thumbnail(media_id: str, mime: str) -> bytes | None:
+    target = thumb_path_for(media_id, mime)
+    if not target.is_file():
+        return None
+    return target.read_bytes()
+
+
 def save(media_id: str, mime: str, data: bytes) -> str:
     """Writes the bytes and returns their sha256."""
     target = path_for(media_id, mime)
@@ -116,9 +172,13 @@ def load(media_id: str, mime: str) -> bytes | None:
 
 
 def remove(media_id: str, mime: str) -> None:
-    """Deletes the bytes. Missing is fine — the goal is that they are gone."""
-    target = path_for(media_id, mime)
-    try:
-        target.unlink()
-    except FileNotFoundError:
-        pass
+    """Deletes the bytes and the thumbnail.
+
+    Missing is fine — the goal is that they are gone, not that we were the one
+    to remove them.
+    """
+    for target in (path_for(media_id, mime), thumb_path_for(media_id, mime)):
+        try:
+            target.unlink()
+        except FileNotFoundError:
+            pass

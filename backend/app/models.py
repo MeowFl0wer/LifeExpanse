@@ -169,6 +169,20 @@ class MediaFile(Base):
     # readable by the world merely because it was uploaded.
     visibility: Mapped[str] = mapped_column(String(16), default="private", index=True)
 
+    # The content this file appears in. Derived from the body on every save
+    # rather than declared by the client — see `services.reconcile_media`.
+    # Null means nothing references it: either a fresh upload not yet saved
+    # into anything, or a file whose content stopped referencing it.
+    content_id: Mapped[str | None] = mapped_column(
+        ForeignKey("contents.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # When it became unreferenced. The sweep uses this so an accidental delete
+    # can be undone within the retention window instead of vanishing at once.
+    orphaned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    # Whether a thumbnail was generated. Videos and tiny images have none.
+    has_thumbnail: Mapped[bool] = mapped_column(Boolean, default=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 

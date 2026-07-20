@@ -43,6 +43,16 @@ class Settings(BaseSettings):
     # Per-user total. 0 means unlimited.
     storage_quota_bytes: int = 2 * 1024 * 1024 * 1024
 
+    # Longest edge of a generated thumbnail. Display uses these; the original
+    # is only fetched when the reader asks to see or download it.
+    thumbnail_max_edge: int = 720
+    # An unreferenced file is kept this long before the sweep removes it, so a
+    # mistaken edit can be undone.
+    media_orphan_retention_days: int = 7
+    # A file uploaded but never saved into any content — an abandoned editor
+    # session. Shorter, because nothing is losing anything.
+    media_unattached_retention_hours: int = 24
+
     # ---- Email verification ----
     verification_code_ttl_minutes: int = 10
     # Guesses allowed against one code before it is burned.
