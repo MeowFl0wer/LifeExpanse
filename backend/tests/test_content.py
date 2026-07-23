@@ -101,3 +101,104 @@ def test_keyword_and_tag_filters(client):
 
     by_kw = client.get("/api/v1/content", params={"author": "euan", "keyword": "ssh"}).json()
     assert [i["title"] for i in by_kw] == ["SSH 配置"]
+
+
+def test_a_very_long_title_produces_a_slug_that_fits(client):
+    """A title is user input; an uncapped slug would overflow the String(200)
+    column on a real database."""
+    from app.services import slugify, MAX_SLUG_LENGTH
+
+    slug = slugify("word " * 200, "entry")
+    assert len(slug) <= MAX_SLUG_LENGTH
+    assert not slug.endswith("-")
+
+
+def test_a_long_but_valid_title_produces_a_capped_slug(client):
+    register(client, "euan")
+    login(client, "euan")
+    res = make_content(client, title="word " * 55)  # 275 chars, under the title cap
+    assert res["slug"]
+    assert len(res["slug"]) <= 200
+
+
+def test_the_uniqueness_suffix_stays_within_the_column(client):
+    """base + '-2' must still fit after capping."""
+    register(client, "euan")
+    login(client, "euan")
+    long_title = "collision " * 25  # 250 chars, under the title cap
+    first = make_content(client, title=long_title)
+    second = make_content(client, title=long_title)
+    assert first["slug"] != second["slug"]
+    assert len(second["slug"]) <= 200
+
+
+def test_an_over_long_title_is_refused(client):
+    """The title column is String(300); the API used to accept any length and
+    leave the database to silently store or reject it."""
+    register(client, "euan")
+    login(client, "euan")
+    res = client.post("/api/v1/content", json={
+        "type": "pkm", "content_kind": "note", "title": "a" * 400,
+        "body": "正文", "visibility": "public", "tags": [],
+        "folder_ids": [], "series_ids": [],
+    })
+    assert res.status_code == 422
+
+
+def test_a_long_article_is_accepted(client):
+    """A note or article is exactly where a lot of text is legitimate, so the
+    ceiling is generous — this 200k-char body must go through."""
+    register(client, "euan")
+    login(client, "euan")
+    res = make_content(client, body="正文段落。" * 40_000)
+    assert res["id"]
+
+
+def test_an_absurdly_large_body_is_still_refused(client):
+    """The cap is a memory-exhaustion guard, not a content limit: 1.1M chars
+    is past any real article and gets rejected before it is buffered whole."""
+    register(client, "euan")
+    login(client, "euan")
+    res = client.post("/api/v1/content", json={
+        "type": "pkm", "content_kind": "note", "title": "标题",
+        "body": "x" * 1_100_000, "visibility": "public", "tags": [],
+        "folder_ids": [], "series_ids": [],
+    })
+    assert res.status_code == 422
+
+
+def test_an_over_long_tag_is_refused(client):
+    register(client, "euan")
+    login(client, "euan")
+    res = client.post("/api/v1/content", json={
+        "type": "pkm", "content_kind": "note", "title": "标题",
+        "body": "正文", "visibility": "public", "tags": ["t" * 80],
+        "folder_ids": [], "series_ids": [],
+    })
+    assert res.status_code == 422
+
+
+def test_too_many_tags_are_refused(client):
+    register(client, "euan")
+    login(client, "euan")
+    res = client.post("/api/v1/content", json={
+        "type": "pkm", "content_kind": "note", "title": "标题",
+        "body": "正文", "visibility": "public", "tags": [f"t{i}" for i in range(60)],
+        "folder_ids": [], "series_ids": [],
+    })
+    assert res.status_code == 422
+
+
+def test_an_over_long_title_cannot_be_patched_in(client):
+    register(client, "euan")
+    login(client, "euan")
+    item = make_content(client)
+    res = client.patch(f"/api/v1/content/{item['id']}", json={"title": "b" * 400})
+    assert res.status_code == 422
+
+
+def test_a_reasonable_title_and_body_still_work(client):
+    register(client, "euan")
+    login(client, "euan")
+    res = make_content(client, title="正常标题", body="正常正文" * 100)
+    assert res["title"] == "正常标题"

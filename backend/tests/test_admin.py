@@ -400,3 +400,33 @@ def test_detail_counts_media_without_revealing_it(client):
     assert body["media_counts"]["bytes"] == len(png)
     # How much space, never what it is.
     assert "secret-holiday-photo" not in str(body)
+
+
+def test_every_admin_route_refuses_a_non_admin(client):
+    """Enumerated from the admin router itself, so a new admin route added
+    without `require_admin` fails this test rather than shipping open. A
+    missing guard would return the ordinary user's data or 200; a present one
+    returns 404 (the same reply as a missing page, so the console's existence
+    is not confirmed)."""
+    from app.routers.admin import router as admin_router
+
+    register(client, "euan")
+    login(client, "euan")
+
+    checked = 0
+    for route in admin_router.routes:
+        # Fill path params with a throwaway id; the guard rejects before the id
+        # is ever looked up.
+        path = route.path
+        for param in getattr(route, "param_convertors", {}):
+            path = path.replace("{" + param + "}", "does-not-exist")
+
+        for method in route.methods - {"HEAD", "OPTIONS"}:
+            res = client.request(method, path)
+            assert res.status_code == 404, (
+                method + " " + path + " did not refuse a non-admin"
+                + " (got " + str(res.status_code) + ") — is require_admin missing?"
+            )
+            checked += 1
+
+    assert checked >= 10, "only " + str(checked) + " admin endpoints checked"

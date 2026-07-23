@@ -49,6 +49,15 @@ def _validated_media_url(value: str | None) -> str | None:
     raise ValueError("封面只支持站内媒体或 https:// 地址")
 
 
+def _validated_tags(tags: list[str]) -> list[str]:
+    """Each tag is user text and becomes a row and a URL facet, so it is
+    length-bounded like everything else."""
+    for tag in tags:
+        if len(tag) > 60:
+            raise ValueError("单个标签不能超过 60 字符")
+    return tags
+
+
 Visibility = Literal["public", "private", "draft"]
 ContentType = Literal["thought", "diary", "pkm"]
 ContentKind = Literal["note", "article"]
@@ -178,29 +187,52 @@ class ContentOut(BaseModel):
     published_at: datetime | None = None
 
 
+# Length bounds matched to the database columns. Without them, a value longer
+# than the column is accepted by the API and then either silently stored
+# (SQLite ignores VARCHAR length) or rejected by the database at write time
+# (PostgreSQL) — neither is a good way to find out. Text columns have no width,
+# so they get a generous ceiling rather than being left unbounded.
+_MAX_TITLE = 300
+_MAX_BODY = 1_000_000  # ~500 pages; a DoS ceiling, not a content limit
+_MAX_SUMMARY = 2_000
+_MAX_CATEGORY = 100
+_MAX_SEO_TITLE = 300
+_MAX_SEO_DESC = 2_000
+_MAX_SOURCE_TEXT = 200
+_MAX_SOURCE_TYPE = 20
+_MAX_THOUGHT_TYPE = 16
+_MAX_TAG = 60
+_MAX_TAGS = 50
+
+
 class ContentIn(BaseModel):
     type: ContentType
-    title: str = ""
-    body: str
-    summary: str | None = None
+    title: str = Field(default="", max_length=_MAX_TITLE)
+    body: str = Field(max_length=_MAX_BODY)
+    summary: str | None = Field(default=None, max_length=_MAX_SUMMARY)
     visibility: Visibility = "private"
     content_kind: ContentKind | None = None
-    thought_type: str | None = None
-    tags: list[str] = []
+    thought_type: str | None = Field(default=None, max_length=_MAX_THOUGHT_TYPE)
+    tags: list[str] = Field(default=[], max_length=_MAX_TAGS)
     folder_ids: list[str] = []
     series_ids: list[str] = []
-    category: str | None = None
+    category: str | None = Field(default=None, max_length=_MAX_CATEGORY)
     cover: str | None = None
-    seo_title: str | None = None
-    seo_description: str | None = None
+    seo_title: str | None = Field(default=None, max_length=_MAX_SEO_TITLE)
+    seo_description: str | None = Field(default=None, max_length=_MAX_SEO_DESC)
     allow_comments: bool | None = None
     favorite: bool | None = None
     archived: bool | None = None
-    source_author: str | None = None
-    source_title: str | None = None
-    source_type: str | None = None
+    source_author: str | None = Field(default=None, max_length=_MAX_SOURCE_TEXT)
+    source_title: str | None = Field(default=None, max_length=_MAX_SOURCE_TEXT)
+    source_type: str | None = Field(default=None, max_length=_MAX_SOURCE_TYPE)
     source_url: str | None = None
-    source_locator: str | None = None
+    source_locator: str | None = Field(default=None, max_length=_MAX_SOURCE_TEXT)
+
+    @field_validator("tags")
+    @classmethod
+    def tags_bounded(cls, v: list[str]) -> list[str]:
+        return _validated_tags(v)
 
     @field_validator("source_url")
     @classmethod
@@ -221,28 +253,33 @@ class ContentIn(BaseModel):
 
 
 class ContentPatch(BaseModel):
-    title: str | None = None
-    body: str | None = None
-    summary: str | None = None
+    title: str | None = Field(default=None, max_length=_MAX_TITLE)
+    body: str | None = Field(default=None, max_length=_MAX_BODY)
+    summary: str | None = Field(default=None, max_length=_MAX_SUMMARY)
     visibility: Visibility | None = None
     content_kind: ContentKind | None = None
-    thought_type: str | None = None
-    tags: list[str] | None = None
+    thought_type: str | None = Field(default=None, max_length=_MAX_THOUGHT_TYPE)
+    tags: list[str] | None = Field(default=None, max_length=_MAX_TAGS)
     folder_ids: list[str] | None = None
     series_ids: list[str] | None = None
-    category: str | None = None
+    category: str | None = Field(default=None, max_length=_MAX_CATEGORY)
     cover: str | None = None
-    seo_title: str | None = None
-    seo_description: str | None = None
+    seo_title: str | None = Field(default=None, max_length=_MAX_SEO_TITLE)
+    seo_description: str | None = Field(default=None, max_length=_MAX_SEO_DESC)
     allow_comments: bool | None = None
     favorite: bool | None = None
     archived: bool | None = None
     # Excerpt provenance. Absent here previously, which is why a saved excerpt
     # could not have its source corrected — the fields simply had nowhere to go.
-    source_author: str | None = None
-    source_title: str | None = None
-    source_type: str | None = None
+    source_author: str | None = Field(default=None, max_length=_MAX_SOURCE_TEXT)
+    source_title: str | None = Field(default=None, max_length=_MAX_SOURCE_TEXT)
+    source_type: str | None = Field(default=None, max_length=_MAX_SOURCE_TYPE)
     source_url: str | None = None
+
+    @field_validator("tags")
+    @classmethod
+    def tags_bounded(cls, v: list[str] | None) -> list[str] | None:
+        return _validated_tags(v) if v is not None else None
     source_locator: str | None = None
 
     @field_validator("source_url")
