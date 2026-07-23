@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseCsv } from './csv'
+import { csvField, parseCsv, serializeCsv } from './csv'
 
 describe('parseCsv', () => {
   it('splits a plain row', () => {
@@ -52,5 +52,54 @@ describe('parseCsv', () => {
 
   it('handles a trailing newline without emitting an extra row', () => {
     expect(parseCsv('a,b\n')).toEqual([['a', 'b']])
+  })
+})
+
+describe('csvField — formula injection and quoting', () => {
+  // A spreadsheet executes a cell that begins with these when the file opens.
+  it('neutralises a formula trigger with a leading apostrophe', () => {
+    expect(csvField('=1+1')).toBe("'=1+1")
+    expect(csvField('+cmd')).toBe("'+cmd")
+    expect(csvField('-2')).toBe("'-2")
+    expect(csvField('@SUM(A1)')).toBe("'@SUM(A1)")
+  })
+
+  it('neutralises the classic RCE payload', () => {
+    const payload = '=cmd|\'/c calc\'!A1'
+    const out = csvField(payload)
+    expect(out.startsWith("'")).toBe(true)
+    // Still one CSV cell, not broken apart.
+    expect(out).toContain(payload)
+  })
+
+  it('leaves an ordinary value alone', () => {
+    expect(csvField('ANA')).toBe('ANA')
+    expect(csvField('NH202')).toBe('NH202')
+    expect(csvField(2096)).toBe('2096')
+  })
+
+  it('quotes a value with a comma, quote or newline', () => {
+    expect(csvField('a,b')).toBe('"a,b"')
+    expect(csvField('say "hi"')).toBe('"say ""hi"""')
+    expect(csvField('line1\nline2')).toBe('"line1\nline2"')
+  })
+
+  it('quotes and neutralises together', () => {
+    // A comma-containing formula needs both.
+    expect(csvField('=a,b')).toBe('"\'=a,b"')
+  })
+
+  it('renders empty for null and undefined', () => {
+    expect(csvField(null)).toBe('')
+    expect(csvField(undefined)).toBe('')
+  })
+})
+
+describe('serializeCsv round-trips through parseCsv', () => {
+  it('a formula-laden grid survives and stays neutralised', () => {
+    const grid = [['日期', '备注'], ['2024-01-01', '=danger']]
+    const text = serializeCsv(grid)
+    const parsed = parseCsv(text)
+    expect(parsed[1]?.[1]).toBe("'=danger")
   })
 })

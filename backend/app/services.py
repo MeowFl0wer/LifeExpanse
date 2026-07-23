@@ -20,14 +20,31 @@ from .schemas import ContentOut
 NOT_FOUND = "内容不存在"
 
 
+# The slug column is String(200); this leaves room for the "-N" uniqueness
+# suffix so a capped slug plus its suffix always fits.
+MAX_SLUG_LENGTH = 180
+
+
+def _cap_slug(slug: str) -> str:
+    if len(slug) <= MAX_SLUG_LENGTH:
+        return slug
+    cut = slug[:MAX_SLUG_LENGTH]
+    last_dash = cut.rfind("-")
+    # Prefer a word boundary, but not if it discards most of the slug.
+    trimmed = cut[:last_dash] if last_dash > MAX_SLUG_LENGTH // 2 else cut
+    return trimmed.rstrip("-")
+
+
 def slugify(title: str, fallback: str) -> str:
     ascii_slug = re.sub(r"[^a-z0-9]+", "-", title.strip().lower()).strip("-")
-    return ascii_slug or fallback
+    return _cap_slug(ascii_slug or fallback)
 
 
 def unique_slug(db: Session, author_id: str, base: str) -> str:
     """Slugs address content, so they must be unique per author."""
-    candidate = base or "entry"
+    # Cap here too: callers may pass a raw string, and the suffix must fit.
+    candidate = _cap_slug(base or "entry")
+    base = candidate
     n = 1
     while db.scalar(
         select(Content.id).where(Content.author_id == author_id, Content.slug == candidate)

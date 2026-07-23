@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { slugify, uniqueSlug } from './slug'
+import { MAX_SLUG_LENGTH, slugify, uniqueSlug } from './slug'
 
 describe('slugify', () => {
   it('lowercases and hyphenates', () => {
@@ -45,5 +45,38 @@ describe('uniqueSlug', () => {
     expect(first).toBe('test')
     expect(second).toBe('test-2')
     expect(first).not.toBe(second)
+  })
+})
+
+describe('slug length is capped', () => {
+  // A title is user input; an uncapped slug flows straight into a URL and a
+  // fixed-width database column (the backend slug column is String(200)).
+  it('caps a very long title', () => {
+    const slug = slugify('a'.repeat(500))
+    expect(slug.length).toBeLessThanOrEqual(MAX_SLUG_LENGTH)
+  })
+
+  it('leaves room for the uniqueness suffix inside the column', () => {
+    const base = slugify('word '.repeat(100))
+    const taken = [base]
+    const unique = uniqueSlug(base, taken)
+    // base + "-2" must still fit the 200-char column.
+    expect(unique.length).toBeLessThanOrEqual(200)
+    expect(unique).not.toBe(base)
+  })
+
+  it('cuts on a word boundary rather than mid-word', () => {
+    const slug = slugify(`${'ab-'.repeat(200)}`)
+    expect(slug.endsWith('-')).toBe(false)
+    expect(slug.length).toBeLessThanOrEqual(MAX_SLUG_LENGTH)
+  })
+
+  it('does not cut a short slug', () => {
+    expect(slugify('My First Post')).toBe('my-first-post')
+  })
+
+  it('caps a raw base passed straight to uniqueSlug', () => {
+    const raw = 'x'.repeat(500)
+    expect(uniqueSlug(raw, []).length).toBeLessThanOrEqual(MAX_SLUG_LENGTH)
   })
 })

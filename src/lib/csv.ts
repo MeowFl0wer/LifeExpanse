@@ -70,3 +70,38 @@ export function parseCsv(text: string): string[][] {
   endRow()
   return rows
 }
+
+/**
+ * Escapes one value for writing into a CSV cell.
+ *
+ * Two separate concerns:
+ *
+ * 1. **RFC 4180 quoting** — a value containing a comma, quote or newline is
+ *    wrapped in quotes with inner quotes doubled.
+ * 2. **Formula injection** — a spreadsheet treats a cell beginning with
+ *    `= + - @` (or a tab/CR before one) as a formula and *executes* it when
+ *    the file is opened. `=cmd|'/c calc'!A1` in an exported cell is a real
+ *    remote-code path on the machine that opens it. A leading apostrophe
+ *    forces the cell to be read as text, which is the standard defence.
+ *
+ * There is no CSV export yet; this exists so the one the spec calls for
+ * (§14.5, §19) cannot be written without it.
+ */
+export function csvField(value: unknown): string {
+  let text = value == null ? '' : String(value)
+
+  // Neutralise a leading formula trigger before anything else looks at it.
+  if (/^[=+\-@\t\r]/.test(text)) {
+    text = `'${text}`
+  }
+
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`
+  }
+  return text
+}
+
+/** Joins a grid into CSV text, every cell escaped. */
+export function serializeCsv(rows: readonly (readonly unknown[])[]): string {
+  return rows.map(row => row.map(csvField).join(',')).join('\r\n')
+}
