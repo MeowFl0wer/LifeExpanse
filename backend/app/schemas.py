@@ -193,7 +193,7 @@ class ContentOut(BaseModel):
 # (PostgreSQL) — neither is a good way to find out. Text columns have no width,
 # so they get a generous ceiling rather than being left unbounded.
 _MAX_TITLE = 300
-_MAX_BODY = 100_000
+_MAX_BODY = 1_000_000  # ~500 pages; a DoS ceiling, not a content limit
 _MAX_SUMMARY = 2_000
 _MAX_CATEGORY = 100
 _MAX_SEO_TITLE = 300

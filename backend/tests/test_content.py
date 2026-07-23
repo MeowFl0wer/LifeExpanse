@@ -145,12 +145,23 @@ def test_an_over_long_title_is_refused(client):
     assert res.status_code == 422
 
 
-def test_an_over_long_body_is_refused(client):
+def test_a_long_article_is_accepted(client):
+    """A note or article is exactly where a lot of text is legitimate, so the
+    ceiling is generous — this 200k-char body must go through."""
+    register(client, "euan")
+    login(client, "euan")
+    res = make_content(client, body="正文段落。" * 40_000)
+    assert res["id"]
+
+
+def test_an_absurdly_large_body_is_still_refused(client):
+    """The cap is a memory-exhaustion guard, not a content limit: 1.1M chars
+    is past any real article and gets rejected before it is buffered whole."""
     register(client, "euan")
     login(client, "euan")
     res = client.post("/api/v1/content", json={
         "type": "pkm", "content_kind": "note", "title": "标题",
-        "body": "x" * 200_000, "visibility": "public", "tags": [],
+        "body": "x" * 1_100_000, "visibility": "public", "tags": [],
         "folder_ids": [], "series_ids": [],
     })
     assert res.status_code == 422
