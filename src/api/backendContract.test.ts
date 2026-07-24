@@ -128,3 +128,72 @@ describe('slug lookup addresses the right route', () => {
     expect(requestMock.mock.calls[0]![0]).toBe('/content/euan/diary/my-entry')
   })
 })
+
+/** Path, method and body of the data layer's Nth request. */
+function callOf(n: number): { path: string; method?: string; body?: Record<string, unknown>; query?: Record<string, unknown> } {
+  const [path, opts] = requestMock.mock.calls[n] as [string, { method?: string; body?: Record<string, unknown>; query?: Record<string, unknown> } | undefined]
+  return { path, method: opts?.method, body: opts?.body, query: opts?.query }
+}
+
+describe('footprint data layer speaks the backend contract', () => {
+  it('searchCities sends q / country / limit to the cities route', async () => {
+    const { searchCities } = await import('./footprint')
+    await searchCities('shang', { country: 'CHN', limit: 5 })
+
+    const c = callOf(0)
+    expect(c.path).toBe('/footprint/cities')
+    expect(c.query).toMatchObject({ q: 'shang', country: 'CHN', limit: 5 })
+  })
+
+  it('searchCities maps snake_case wire fields to camelCase', async () => {
+    requestMock.mockResolvedValue([
+      { id: 'c1', name: 'Shanghai', lat: 31.2, lng: 121.4, country_code: 'CHN', population: 22315474 },
+    ])
+    const { searchCities } = await import('./footprint')
+    const [city] = await searchCities('shanghai')
+    expect(city).toMatchObject({ name: 'Shanghai', countryCode: 'CHN', population: 22315474 })
+  })
+
+  it('listPlaces addresses the owner route and maps the aggregate fields', async () => {
+    requestMock.mockResolvedValue([
+      { id: 'p1', city: 'Tokyo', country_code: 'JPN', lat: 35.6, lng: 139.6, first_visit: '2020-01-15T00:00:00', last_visit: '2024-11-18T00:00:00', visit_count: 2 },
+    ])
+    const { listPlaces } = await import('./footprint')
+    const places = await listPlaces('euan', 'euan')
+
+    expect(callOf(0).path).toBe('/footprint/euan/places')
+    expect(places[0]).toMatchObject({
+      countryCode: 'JPN', firstVisit: '2020-01-15T00:00:00', lastVisit: '2024-11-18T00:00:00', visitCount: 2,
+    })
+  })
+
+  it('addVisit POSTs the wire body and never sends the owner or a coordinate', async () => {
+    requestMock.mockResolvedValue({ id: 'v1', place_id: 'p1', visited_on: '2024-05-01T00:00:00', note: null, source: 'manual' })
+    const { addVisit } = await import('./footprint')
+    const visit = await addVisit('euan', { city: 'Berlin', countryCode: 'DEU', visitedOn: '2024-05-01', note: '  ' })
+
+    const c = callOf(0)
+    expect(c.path).toBe('/footprint/visits')
+    expect(c.method).toBe('POST')
+    expect(c.body).toMatchObject({ city: 'Berlin', country_code: 'DEU', visited_on: '2024-05-01' })
+    // The server derives the owner from the session and the coordinate from the
+    // dataset; the client must not be trusted for either.
+    expect(c.body).not.toHaveProperty('owner')
+    expect(c.body).not.toHaveProperty('lat')
+    expect(c.body).not.toHaveProperty('lng')
+    // A whitespace-only note is normalised to null, not sent as spaces.
+    expect(c.body!.note).toBeNull()
+    // Wire → app mapping.
+    expect(visit).toMatchObject({ placeId: 'p1', visitedOn: '2024-05-01T00:00:00' })
+  })
+
+  it('deleteVisit issues a DELETE to the visit route', async () => {
+    requestMock.mockResolvedValue(undefined)
+    const { deleteVisit } = await import('./footprint')
+    await deleteVisit('euan', 'v-123')
+
+    const c = callOf(0)
+    expect(c.path).toBe('/footprint/visits/v-123')
+    expect(c.method).toBe('DELETE')
+  })
+})

@@ -113,6 +113,50 @@ export interface FootprintCity {
   note?: string
 }
 
+/**
+ * The v1.9 footprint shape, aligned with the backend (Place / Visit split).
+ *
+ * `FootprintCity` above is the older prototype shape still read by the public
+ * preview pages (home, me, dashboard, search); it stays until server-side
+ * public-footprint visibility exists to feed them. The types below back the
+ * owner's map page, which goes through the real data layer.
+ */
+
+/** A city-search hit: name + country + coordinate come from the dataset. */
+export interface FootprintCityResult {
+  id: string
+  name: string
+  lat: number
+  lng: number
+  /** ISO 3166-1 alpha-3. */
+  countryCode: string
+  population: number
+}
+
+/** An aggregated place on the map: one city, with visit stats derived from real visits. */
+export interface FootprintPlace {
+  id: string
+  city: string
+  /** ISO 3166-1 alpha-3. */
+  countryCode: string
+  lat: number
+  lng: number
+  /** ISO datetime, or null when the place somehow has no visits. */
+  firstVisit: string | null
+  lastVisit: string | null
+  visitCount: number
+}
+
+/** A single recorded visit. */
+export interface FootprintVisitRecord {
+  id: string
+  placeId: string
+  /** ISO datetime. */
+  visitedOn: string
+  note: string | null
+  source: string
+}
+
 export type FlightStatus = 'normal' | 'delayed' | 'cancelled'
 
 export interface FlightRecord {
