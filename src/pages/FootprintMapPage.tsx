@@ -7,6 +7,7 @@ import PrivateModuleGate from '../components/PrivateModuleGate'
 import { footprintCities, addTrajectoryEntry, recordFootprintVisit, nextId } from '../mockData'
 import type { FootprintCity } from '../types'
 import { useIsOwnerOf } from '../auth'
+import { toAlpha3 } from '../lib/country'
 
 type SortKey = 'visitCount' | 'lastVisit' | 'city'
 
@@ -62,6 +63,18 @@ export default function FootprintMapPage() {
   const mapPoints = cities
     .filter(c => !c.pending)
     .map(c => ({ id: c.id, lat: c.lat, lng: c.lng, label: `${c.city} · 到访 ${c.visitCount} 次`, value: c.visitCount }))
+
+  // Highlight a country once any city in it is on the map. Pending rows have no
+  // coordinate yet, so they light neither a point nor a country.
+  const visitedCountries = useMemo(() => {
+    const codes = new Set<string>()
+    for (const c of cities) {
+      if (c.pending) continue
+      const alpha3 = toAlpha3(c.country)
+      if (alpha3) codes.add(alpha3)
+    }
+    return [...codes]
+  }, [cities])
 
   function handleAddVisit(e: React.FormEvent) {
     e.preventDefault()
@@ -226,7 +239,7 @@ export default function FootprintMapPage() {
         <section className="mb-10">
           <SectionTitle title="世界地图" desc="点的大小代表到访次数；坐标为城市中心点，仅作展示，不代表精确位置。" />
           <div className="life-surface p-4">
-            <WorldMap points={mapPoints} height={340} />
+            <WorldMap points={mapPoints} visitedCountries={visitedCountries} height={340} />
           </div>
         </section>
 
