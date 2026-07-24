@@ -30,7 +30,8 @@ describe('private modules hide their data from guests', () => {
   it('footprint map shows the prompt, not the cities', () => {
     renderAt('/euan/map', <FootprintMapPage />)
     expect(screen.getByText('隐私内容请登录后查看')).toBeTruthy()
-    expect(screen.queryByText('首尔')).toBeNull()
+    // City names come from the dataset (English primary), e.g. Tokyo.
+    expect(screen.queryByText('Tokyo')).toBeNull()
   })
 
   it('flights shows the prompt, not the flight numbers', () => {
@@ -57,10 +58,11 @@ describe('private modules open up for the owner', () => {
     expect(screen.getByText('成田机场转机，候机三小时。')).toBeTruthy()
   })
 
-  it('footprint map renders real cities', () => {
+  it('footprint map renders real cities', async () => {
     renderAt('/euan/map', <FootprintMapPage />)
     expect(screen.queryByText('隐私内容请登录后查看')).toBeNull()
-    expect(screen.getAllByText('首尔').length).toBeGreaterThan(0)
+    // Places load through the data layer now, so wait for the async list.
+    expect(await screen.findByText('Tokyo')).toBeTruthy()
   })
 
   it('flights renders real flight numbers', () => {
