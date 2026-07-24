@@ -153,6 +153,33 @@ export default function AboutPage() {
             </p>
           </Section>
 
+          <Section title="数据来源" desc="地图与地理数据的开源来源与许可。">
+            <div>
+              <Row
+                label="城市坐标"
+                value={
+                  <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer" className="text-[color:var(--primary)] hover:underline">
+                    GeoNames
+                  </a>
+                }
+              />
+              <Row label="城市数据许可" value="CC BY 4.0" />
+              <Row
+                label="国家轮廓"
+                value={
+                  <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer" className="text-[color:var(--primary)] hover:underline">
+                    Natural Earth
+                  </a>
+                }
+              />
+              <Row label="国家代码" value="ISO 3166-1（via i18n-iso-countries）" />
+            </div>
+            <p className="mt-4 text-xs leading-6 text-[color:var(--muted-foreground)]">
+              地图为纯前端矢量渲染（d3-geo + Natural Earth），不使用任何地图 API，
+              离线可用。城市坐标只到城市级别，不记录精确位置。
+            </p>
+          </Section>
+
           <Section title="联系">
             <p className="text-sm leading-7 text-[color:var(--muted-foreground)]">
               这是一个私人项目，暂不提供公开的联系方式。
