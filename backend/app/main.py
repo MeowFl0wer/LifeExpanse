@@ -10,7 +10,7 @@ from .config import get_settings
 from .db import SessionLocal
 from .migrate import run_migrations
 from .routers import (
-    admin, auth, comments, content, drafts, library, media, trash, twofactor,
+    admin, auth, comments, content, drafts, footprint, library, media, trash, twofactor,
 )
 
 settings = get_settings()
@@ -73,6 +73,7 @@ app.include_router(drafts.router)
 app.include_router(twofactor.router)
 app.include_router(admin.router)
 app.include_router(media.router)
+app.include_router(footprint.router)
 
 
 @app.get("/api/v1/health")
