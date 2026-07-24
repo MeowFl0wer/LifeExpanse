@@ -341,3 +341,65 @@ class AuditLog(Base):
     event: Mapped[str] = mapped_column(String(100))
     detail: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Place(Base):
+    """A city the owner has visited, at city granularity (§13.1).
+
+    Country is stored as an ISO 3166-1 **alpha-3** code (`CHN`), never a name:
+    "韩国 / South Korea / Korea" are one country, and matching on the display
+    name is a losing game (§31.1). Coordinates are a display point (the city
+    centre), not the user's real location.
+
+    A place belongs to its owner: two users visiting Tokyo are two rows, so one
+    person's travel history never leaks into another's map.
+    """
+
+    __tablename__ = "places"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "city", "country_code", name="uq_owner_city_country"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+
+    city: Mapped[str] = mapped_column(String(120), index=True)
+    # ISO 3166-1 alpha-3. Uppercased on the way in.
+    country_code: Mapped[str] = mapped_column(String(3), index=True)
+    # First-level administrative region, optional (§13.1).
+    region: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    lat: Mapped[float] = mapped_column()
+    lng: Mapped[float] = mapped_column()
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class FootprintVisit(Base):
+    """One visit to a place. A place is visited many times; the map aggregates.
+
+    Kept separate from `places` so "first visit / last visit / count" are
+    derived from real rows rather than counters that can drift. A visit can be
+    created by hand or generated from a trajectory entry (§13.2); `source`
+    records which, so a trajectory-generated visit can be cleaned up if the
+    trajectory is removed.
+    """
+
+    __tablename__ = "footprint_visits"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    place_id: Mapped[str] = mapped_column(ForeignKey("places.id", ondelete="CASCADE"), index=True)
+
+    # The day of the visit. Not a timestamp: city-granularity records do not
+    # need the hour, and a plain date sorts and groups cleanly on the timeline.
+    visited_on: Mapped[datetime] = mapped_column(DateTime, index=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # manual | trajectory. A trajectory-sourced visit is removed with its
+    # trajectory entry; a manual one is not.
+    source: Mapped[str] = mapped_column(String(16), default="manual")
+    # Set when source == trajectory, so the two can be reconciled.
+    source_ref: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
