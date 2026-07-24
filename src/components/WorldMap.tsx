@@ -1,3 +1,24 @@
+import { useMemo } from 'react'
+import { geoMercator, geoPath } from 'd3-geo'
+import { feature } from 'topojson-client'
+import worldAtlas from 'world-atlas/countries-110m.json'
+import { numericFor } from '../lib/country'
+
+/**
+ * The one map component (v1.9 §33 / handoff §5).
+ *
+ * Real country geometry via d3-geo + world-atlas (an offline TopoJSON vector —
+ * no map tiles, no map API). This first version is the static world view:
+ * country outlines, visited-country highlight, and city points. Zoom, layer
+ * toggles, and great-circle routes are deferred to the trip module, where the
+ * flight data joins in; the `arcs` layer below stays only so the existing
+ * flights prototype keeps rendering until then.
+ *
+ * world-atlas indexes geometries by ISO 3166-1 numeric code. The app speaks
+ * alpha-3, so `numericFor` bridges the two — one tested lookup, not a second
+ * naming map that could drift.
+ */
+
 interface MapPoint {
   id: string
   lat: number
@@ -17,130 +38,150 @@ interface MapArc {
 interface WorldMapProps {
   points?: MapPoint[]
   arcs?: MapArc[]
+  /** Alpha-3 codes of countries to highlight (any spelling normalised upstream). */
+  visitedCountries?: string[]
   height?: number
   className?: string
-  showLabels?: boolean
 }
 
-const VB_W = 200
-const VB_H = 100
-const LAT_MIN = -56
-const LAT_MAX = 75
-
-function project(lat: number, lng: number): { x: number; y: number } {
-  const x = ((lng + 180) / 360) * VB_W
-  const y = ((LAT_MAX - lat) / (LAT_MAX - LAT_MIN)) * VB_H
-  return { x, y }
+/** Minimal shape we read off a world-atlas country feature. */
+interface CountryFeature {
+  type: 'Feature'
+  id?: string | number
+  properties: { name?: string }
+  geometry: unknown
 }
 
-function arcPath(fromLat: number, fromLng: number, toLat: number, toLng: number): string {
-  const p1 = project(fromLat, fromLng)
-  const p2 = project(toLat, toLng)
-  const mx = (p1.x + p2.x) / 2
-  const lift = Math.min(26, Math.abs(p2.x - p1.x) / 3 + 10)
-  const my = (p1.y + p2.y) / 2 - lift
-  return `M ${p1.x} ${p1.y} Q ${mx} ${my} ${p2.x} ${p2.y}`
+// ISO numeric codes carry a leading zero in some sources (`004`) and not in
+// others (`4`). Normalise both sides the same way so `004 === 4`.
+function normNumeric(code: string | number | undefined | null): string {
+  if (code == null) return ''
+  return String(code).replace(/^0+/, '')
 }
 
-const LON_LINES = [-180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180]
-const LAT_LINES = [-30, 0, 30, 60]
+// --- Base map: computed once at module load, never per render ---------------
 
-// Rough centroids, used only to place faint reference labels — not a claim of precise borders.
-const CONTINENT_LABELS = [
-  { name: '北美洲', lat: 45, lng: -100 },
-  { name: '南美洲', lat: -15, lng: -60 },
-  { name: '欧洲', lat: 50, lng: 15 },
-  { name: '非洲', lat: 2, lng: 20 },
-  { name: '亚洲', lat: 40, lng: 95 },
-  { name: '大洋洲', lat: -25, lng: 135 },
-]
+const COUNTRIES: CountryFeature[] = (
+  feature(
+    worldAtlas as never,
+    (worldAtlas as { objects: { countries: unknown } }).objects.countries as never,
+  ) as unknown as { features: CountryFeature[] }
+).features
 
-export default function WorldMap({ points = [], arcs = [], height = 320, className = '', showLabels = true }: WorldMapProps) {
-  const maxValue = Math.max(1, ...points.map(p => p.value ?? 1))
+const COUNTRIES_FC = { type: 'FeatureCollection' as const, features: COUNTRIES }
+
+const VB_W = 960
+// Fit Web Mercator to the width, then crop the viewBox tightly to the drawn
+// land so there is no dead vertical margin.
+const PROJECTION = geoMercator().fitWidth(VB_W, COUNTRIES_FC as never)
+const BASE_PATH = geoPath(PROJECTION)
+const [[, minY], [, maxY]] = BASE_PATH.bounds(COUNTRIES_FC as never)
+const VB_H = Math.round(maxY - minY)
+const [tx, ty] = PROJECTION.translate()
+PROJECTION.translate([tx, ty - minY])
+const PATH = geoPath(PROJECTION)
+
+// Country outlines never change, so build their `d` strings once.
+const COUNTRY_SHAPES = COUNTRIES.map(f => ({
+  cc: normNumeric(f.id),
+  name: f.properties?.name ?? '',
+  d: PATH(f as never),
+})).filter(s => s.d)
+
+export default function WorldMap({
+  points = [],
+  arcs = [],
+  visitedCountries = [],
+  height = 320,
+  className = '',
+}: WorldMapProps) {
+  const visitedCodes = useMemo(() => {
+    const set = new Set<string>()
+    for (const alpha3 of visitedCountries) {
+      const num = numericFor(alpha3)
+      if (num) set.add(normNumeric(num))
+    }
+    return set
+  }, [visitedCountries])
+
+  const projected = useMemo(() => {
+    const maxValue = Math.max(1, ...points.map(p => p.value ?? 1))
+    return points.map(p => {
+      const xy = PROJECTION([p.lng, p.lat])
+      if (!xy) return null
+      const r = 3.5 + ((p.value ?? 1) / maxValue) * 5.5
+      return { id: p.id, label: p.label, x: xy[0], y: xy[1], r }
+    }).filter((p): p is NonNullable<typeof p> => p !== null)
+  }, [points])
+
+  const arcShapes = useMemo(() => {
+    return arcs.map(a => {
+      const from = PROJECTION([a.fromLng, a.fromLat])
+      const to = PROJECTION([a.toLng, a.toLat])
+      if (!from || !to) return null
+      const mx = (from[0] + to[0]) / 2
+      const lift = Math.min(90, Math.abs(to[0] - from[0]) / 3 + 30)
+      const my = (from[1] + to[1]) / 2 - lift
+      return { id: a.id, d: `M ${from[0]} ${from[1]} Q ${mx} ${my} ${to[0]} ${to[1]}`, from, to }
+    }).filter((a): a is NonNullable<typeof a> => a !== null)
+  }, [arcs])
 
   return (
     <div className={className} style={{ width: '100%', height }}>
-      <svg viewBox={`0 0 ${VB_W} ${VB_H}`} width="100%" height="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="世界地图示意">
-        <rect x={0} y={0} width={VB_W} height={VB_H} rx={2} fill="var(--secondary)" opacity={0.5} />
+      <svg
+        viewBox={`0 0 ${VB_W} ${VB_H}`}
+        width="100%"
+        height="100%"
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label="世界地图，标出去过的城市与国家"
+      >
+        <rect x={0} y={0} width={VB_W} height={VB_H} fill="var(--secondary)" opacity={0.35} />
 
-        {LON_LINES.map(lon => {
-          const { x } = project(0, lon)
+        {COUNTRY_SHAPES.map(s => {
+          const visited = s.cc !== '' && visitedCodes.has(s.cc)
           return (
-            <line
-              key={`lon-${lon}`}
-              x1={x} y1={0} x2={x} y2={VB_H}
-              stroke="var(--border)"
-              strokeWidth={lon === 0 ? 0.3 : 0.15}
-              opacity={lon === 0 ? 0.7 : 0.45}
-            />
-          )
-        })}
-        {LAT_LINES.map(lat => {
-          const { y } = project(lat, 0)
-          return (
-            <line
-              key={`lat-${lat}`}
-              x1={0} y1={y} x2={VB_W} y2={y}
-              stroke="var(--border)"
-              strokeWidth={lat === 0 ? 0.3 : 0.15}
-              opacity={lat === 0 ? 0.7 : 0.45}
-            />
-          )
-        })}
-        <rect x={0} y={0} width={VB_W} height={VB_H} fill="none" stroke="var(--border)" strokeWidth={0.4} />
-
-        {showLabels && CONTINENT_LABELS.map(label => {
-          const { x, y } = project(label.lat, label.lng)
-          return (
-            <text
-              key={label.name}
-              x={x}
-              y={y}
-              textAnchor="middle"
-              fontSize={4.2}
-              fill="var(--muted-foreground)"
-              opacity={0.5}
-              style={{ userSelect: 'none' }}
+            <path
+              key={s.cc || s.name}
+              d={s.d as string}
+              data-cc={s.cc}
+              data-name={s.name}
+              data-visited={visited ? 'true' : 'false'}
+              fill={visited ? 'var(--primary)' : 'var(--secondary)'}
+              fillOpacity={visited ? 0.2 : 0.85}
+              stroke={visited ? 'var(--primary)' : 'var(--border)'}
+              strokeOpacity={visited ? 0.5 : 0.8}
+              strokeWidth={0.75}
+              vectorEffect="non-scaling-stroke"
             >
-              {label.name}
-            </text>
+              {s.name && <title>{s.name}</title>}
+            </path>
           )
         })}
 
-        {arcs.map(arc => (
-          <path
-            key={arc.id}
-            d={arcPath(arc.fromLat, arc.fromLng, arc.toLat, arc.toLng)}
-            fill="none"
-            stroke="var(--accent)"
-            strokeWidth={0.4}
-            opacity={0.75}
-            strokeLinecap="round"
-          />
+        {arcShapes.map(a => (
+          <g key={a.id}>
+            <path
+              d={a.d}
+              fill="none"
+              stroke="var(--accent)"
+              strokeWidth={1.4}
+              strokeOpacity={0.75}
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+            <circle cx={a.from[0]} cy={a.from[1]} r={2.4} fill="var(--foreground)" opacity={0.55} />
+            <circle cx={a.to[0]} cy={a.to[1]} r={2.4} fill="var(--foreground)" opacity={0.55} />
+          </g>
         ))}
 
-        {arcs.map(arc => {
-          const from = project(arc.fromLat, arc.fromLng)
-          const to = project(arc.toLat, arc.toLng)
-          return (
-            <g key={`${arc.id}-dots`}>
-              <circle cx={from.x} cy={from.y} r={0.65} fill="var(--foreground)" opacity={0.55} />
-              <circle cx={to.x} cy={to.y} r={0.65} fill="var(--foreground)" opacity={0.55} />
-            </g>
-          )
-        })}
-
-        {points.map(p => {
-          const { x, y } = project(p.lat, p.lng)
-          const r = 0.9 + ((p.value ?? 1) / maxValue) * 1.7
-          return (
-            <g key={p.id}>
-              <circle cx={x} cy={y} r={r + 1.1} fill="var(--primary)" opacity={0.14} />
-              <circle cx={x} cy={y} r={r} fill="var(--primary)" opacity={0.88} />
-              <title>{p.label}</title>
-            </g>
-          )
-        })}
+        {projected.map(p => (
+          <g key={p.id} data-point-id={p.id}>
+            <circle cx={p.x} cy={p.y} r={p.r + 3} fill="var(--primary)" opacity={0.16} />
+            <circle cx={p.x} cy={p.y} r={p.r} fill="var(--primary)" opacity={0.9} />
+            <title>{p.label}</title>
+          </g>
+        ))}
       </svg>
     </div>
   )
